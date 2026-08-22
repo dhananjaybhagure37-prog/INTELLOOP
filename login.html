@@ -19,7 +19,8 @@
     body {
       width: 100vw;
       height: 100vh;
-      background-color: #e0e0e0;
+      background-color: #0c1324;
+      background-image: radial-gradient(circle at center, #151b2d 0%, #0c1324 100%);
       overflow: hidden;
       font-size: 12px;
       margin: 0;
@@ -33,10 +34,13 @@
       display: inline-block;
       width: 275px;
       height: 490px;
-      border-radius: 3px;
+      border-radius: 24px;
       transform: translate(-50%, -50%);
       overflow: hidden;
-      background-image: linear-gradient(to top right, #f9a743, #f9db5f);
+      background-color: rgba(25, 31, 49, 0.6);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(173, 198, 255, 0.15);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5), inset 0 0 20px rgba(173, 198, 255, 0.05);
     }
     
     @media screen and (max-height: 500px) {
@@ -52,7 +56,9 @@
       width: 200px;
       height: 200px;
       border-radius: 50%;
-      background-color: #243946;
+      background-color: transparent;
+      border: 3px solid rgba(173, 198, 255, 0.3);
+      box-shadow: 0 0 20px rgba(173, 198, 255, 0.2), inset 0 0 20px rgba(173, 198, 255, 0.1);
     }
     
     .center .ear.ear--left { left: -135px; }
@@ -76,7 +82,8 @@
       width: 25px;
       height: 25px;
       border-radius: 50%;
-      background-color: #243946;
+      background-color: #00e5ff;
+      box-shadow: 0 0 15px #00e5ff, 0 0 25px #00e5ff;
     }
     
     .center .eye.eye--left { margin-right: 40px; }
@@ -106,7 +113,8 @@
       width: 15px;
       height: 8px;
       border-radius: 50%;
-      background-color: #476375;
+      background-color: #adc6ff;
+      box-shadow: 0 0 10px #adc6ff;
     }
     
     .center .mouth {
@@ -119,7 +127,8 @@
       left: -28px;
       top: -19px;
       transform: scaleX(1.1);
-      stroke: #243946;
+      stroke: #adc6ff;
+      filter: drop-shadow(0 0 5px #adc6ff);
     }
     
     .center .mouth-hole {
@@ -130,7 +139,9 @@
       height: 15px;
       border-radius: 50% / 100% 100% 0% 0;
       transform: rotate(180deg);
-      background-color: #243946;
+      background-color: #070d1f;
+      border-bottom: 2px solid #adc6ff;
+      box-shadow: inset 0 5px 10px rgba(0,0,0,0.8);
       z-index: -1;
     }
     
@@ -139,7 +150,8 @@
       top: 5px;
       width: 30px;
       height: 20px;
-      background-color: #ffd7dd;
+      background-color: rgba(221, 183, 255, 0.9);
+      box-shadow: 0 5px 15px rgba(221, 183, 255, 0.4);
       transform-origin: top;
       transform: rotateX(60deg);
     }
@@ -154,7 +166,7 @@
       width: 30px;
       height: 30px;
       border-radius: 15px;
-      background-color: #ffd7dd;
+      background-color: rgba(221, 183, 255, 0.9);
     }
     
     .center .line {
@@ -162,7 +174,7 @@
       top: 0;
       width: 30px;
       height: 5px;
-      background-color: #fcb7bf;
+      background-color: #a855f7;
     }
     
     .center .median {
@@ -173,7 +185,7 @@
       width: 4px;
       height: 25px;
       border-radius: 5px;
-      background-color: #fcb7bf;
+      background-color: #a855f7;
     }
     
     .center .hands {
@@ -204,10 +216,11 @@
     .center .hands .finger .bone {
       width: 20px;
       height: 20px;
-      border: 2px solid #243946;
+      border: 2px solid #adc6ff;
       border-bottom: none;
       border-top: none;
-      background-color: #fac555;
+      background-color: #151b2d;
+      box-shadow: inset 0 0 8px rgba(173, 198, 255, 0.3);
     }
     
     .center .hands .finger .nail {
@@ -217,8 +230,8 @@
       width: 20px;
       height: 18px;
       border-radius: 50%;
-      border: 2px solid #243946;
-      background-color: #fac555;
+      border: 2px solid #adc6ff;
+      background-color: #151b2d;
       z-index: -1;
     }
     
@@ -253,7 +266,8 @@
       position: absolute;
       top: 40%;
       left: 35px;
-      color: #bbb;
+      color: #adc6ff;
+      text-shadow: 0 0 5px rgba(173, 198, 255, 0.5);
     }
     
     .center .login label .fa:before {
@@ -272,11 +286,19 @@
     .center .login input {
       padding: 0 20px 0 40px;
       margin: 5px 0;
-      box-shadow: none;
       outline: none;
+      background: rgba(173, 198, 255, 0.05);
+      border: 1px solid rgba(173, 198, 255, 0.2);
+      color: #dce1fb;
+      box-shadow: inset 0 2px 5px rgba(0,0,0,0.2);
+      transition: all 0.3s;
+    }
+    .center .login input:focus {
+      border-color: #adc6ff;
+      box-shadow: 0 0 10px rgba(173, 198, 255, 0.2), inset 0 2px 5px rgba(0,0,0,0.2);
     }
     
-    .center .login input::placeholder { color: #ccc; }
+    .center .login input::placeholder { color: rgba(220, 225, 251, 0.4); }
     .center .login input.password { padding: 0 90px 0 40px; }
     
     .center .login .password-button {
@@ -291,8 +313,11 @@
       border-radius: 30px;
       border: none;
       outline: none;
-      background-color: #243946;
-      color: white;
+      background-color: rgba(173, 198, 255, 0.1);
+      border: 1px solid rgba(173, 198, 255, 0.3);
+      color: #adc6ff;
+      backdrop-filter: blur(4px);
+      transition: all 0.2s;
       cursor: pointer;
     }
     
@@ -302,8 +327,11 @@
       width: calc(100% - 40px);
       margin: 20px 20px 0;
       outline: none;
-      background-color: #243946;
-      color: white;
+      background-color: rgba(173, 198, 255, 0.1);
+      border: 1px solid rgba(173, 198, 255, 0.3);
+      color: #adc6ff;
+      backdrop-filter: blur(4px);
+      transition: all 0.2s;
       transition: transform 0.1s;
       cursor: pointer;
     }
@@ -324,8 +352,11 @@
       height: 35px;
       margin: 0 10px;
       border-radius: 50%;
-      background-color: #243946;
-      color: white;
+      background-color: rgba(173, 198, 255, 0.1);
+      border: 1px solid rgba(173, 198, 255, 0.3);
+      color: #adc6ff;
+      backdrop-filter: blur(4px);
+      transition: all 0.2s;
       font-size: 18px;
       cursor: pointer;
       border: none;
@@ -336,19 +367,20 @@
     .center .footer {
       text-align: center;
       margin-top: 15px;
-      color: #666;
+      color: rgba(140, 144, 159, 0.8);
+      letter-spacing: 0.5px;
     }
     
     #loading-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(224, 224, 224, 0.8);
+      background: rgba(12, 19, 36, 0.9);
       z-index: 50;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 18px;
-      color: #243946;
+      color: #adc6ff;
       display: none;
     }
   </style>
@@ -368,7 +400,7 @@
       </div>
       <div class="nose">
         <svg width="38.161" height="22.03">
-          <path d="M2.017 10.987Q-.563 7.513.157 4.754C.877 1.994 2.976.135 6.164.093 16.4-.04 22.293-.022 32.048.093c3.501.042 5.48 2.081 6.02 4.661q.54 2.579-2.051 6.233-8.612 10.979-16.664 11.043-8.053.063-17.336-11.043z" fill="#243946"></path>
+          <path d="M2.017 10.987Q-.563 7.513.157 4.754C.877 1.994 2.976.135 6.164.093 16.4-.04 22.293-.022 32.048.093c3.501.042 5.48 2.081 6.02 4.661q.54 2.579-2.051 6.233-8.612 10.979-16.664 11.043-8.053.063-17.336-11.043z" fill="#adc6ff"></path>
         </svg>
         <div class="glow"></div>
       </div>
