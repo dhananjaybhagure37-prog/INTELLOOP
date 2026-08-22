@@ -10,6 +10,12 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import re
 import time
+import ssl
+
+# Disable SSL verification for arXiv API to prevent CERTIFICATE_VERIFY_FAILED on some environments
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
 
 ATOM_NS = {'atom': 'http://www.w3.org/2005/Atom', 'arxiv': 'http://arxiv.org/schemas/atom'}
 
@@ -37,7 +43,7 @@ def search_arxiv(query, max_results=5, timeout=8):
 
     try:
         req = urllib.request.Request(arxiv_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             xml_content = resp.read()
             
             root = ET.fromstring(xml_content)
@@ -111,15 +117,16 @@ def search_arxiv(query, max_results=5, timeout=8):
             }
 
     except Exception as e:
+        err_msg = str(e) or repr(e) or "Unknown arXiv API error"
         elapsed_ms = int((time.time() - start_time) * 1000)
         return {
             "success": False,
             "tool": "academic_search",
             "provider": "arXiv Official API",
-            "error": str(e),
+            "error": err_msg,
             "papers": [],
             "elapsed_ms": elapsed_ms,
-            "observation": f"arXiv Academic Search notice: {str(e)}. Proceeding with available evidence."
+            "observation": f"arXiv Academic Search notice: {err_msg}. Proceeding with available evidence."
         }
 
 def search_arxiv_fallback(query, max_results=4):
@@ -131,7 +138,7 @@ def search_arxiv_fallback(query, max_results=4):
     headers = {"User-Agent": "Intelloop-Research-Agent/2.0"}
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
             root = ET.fromstring(resp.read())
             entries = root.findall('atom:entry', ATOM_NS)
             papers = []
@@ -163,12 +170,13 @@ def search_arxiv_fallback(query, max_results=4):
                 "observation": f"Retrieved {len(papers)} grounding scientific papers from arXiv repository."
             }
     except Exception as e:
+        err_msg = str(e) or repr(e) or "Unknown arXiv API error"
         return {
             "success": False,
             "tool": "academic_search",
-            "error": str(e),
+            "error": err_msg,
             "papers": [],
-            "observation": f"arXiv service temporarily unavailable: {str(e)}"
+            "observation": f"arXiv service temporarily unavailable: {err_msg}"
         }
 
 def execute_academic_search(query, max_results=5):

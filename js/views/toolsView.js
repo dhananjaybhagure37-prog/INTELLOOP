@@ -232,10 +232,17 @@ export function bindToolsEvents() {
 
       try {
         const result = await ApiClient.testTool(toolId, params);
-        if (outputDisplay) {
-          outputDisplay.innerHTML = `<span class="text-emerald-400 font-bold">[EXECUTION SUCCESS] Status 200 OK</span>\n` + JSON.stringify(result, null, 2);
+        if (result && result.success === false) {
+          if (outputDisplay) {
+            outputDisplay.innerHTML = `<span class="text-amber-400 font-bold">[EXECUTION COMPLETED WITH ERRORS]</span>\n` + JSON.stringify(result, null, 2);
+          }
+          toast.show(`Tool execution failed: ${result.error || 'Check telemetry output'}`, 'error');
+        } else {
+          if (outputDisplay) {
+            outputDisplay.innerHTML = `<span class="text-emerald-400 font-bold">[EXECUTION SUCCESS] Status 200 OK</span>\n` + JSON.stringify(result, null, 2);
+          }
+          toast.show(`Tool executed successfully!`, 'success');
         }
-        toast.show(`Tool executed successfully!`, 'success');
       } catch (err) {
         if (outputDisplay) {
           outputDisplay.innerHTML = `<span class="text-error font-bold">[EXECUTION ERROR]</span>\n${err.message}`;

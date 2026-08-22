@@ -14,6 +14,12 @@ import time
 import threading
 import queue
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from database.db import (
     get_investigation, list_investigations, delete_investigation,
     list_logs, init_db, get_db, get_all_tool_stats, record_tool_usage
