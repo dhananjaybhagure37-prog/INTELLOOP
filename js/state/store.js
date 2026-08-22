@@ -13,7 +13,7 @@ import {
 import { INITIAL_TOOLS } from '../tools/toolRegistry.js';
 import { generateId } from '../utils/formatters.js';
 
-const STORAGE_KEY = 'intelloop_state_v1';
+const STORAGE_KEY = 'intelloop_state_v2';
 
 class Store {
   constructor() {
@@ -35,7 +35,7 @@ class Store {
           notifications: parsed.notifications || INITIAL_NOTIFICATIONS,
           settings: parsed.settings || INITIAL_SETTINGS,
           currentRoute: 'dashboard',
-          selectedMissionId: 'NX-8842-OMEGA',
+          selectedMissionId: null,
           searchQuery: ''
         };
       }
@@ -52,7 +52,7 @@ class Store {
       notifications: JSON.parse(JSON.stringify(INITIAL_NOTIFICATIONS)),
       settings: JSON.parse(JSON.stringify(INITIAL_SETTINGS)),
       currentRoute: 'dashboard',
-      selectedMissionId: 'NX-8842-OMEGA',
+      selectedMissionId: null,
       searchQuery: ''
     };
   }
@@ -118,7 +118,7 @@ class Store {
   }
 
   createMission(missionData) {
-    const id = generateId('NX');
+    const id = missionData.id || generateId('NX');
     const newMission = {
       id,
       title: missionData.title || 'Untitled Mission',

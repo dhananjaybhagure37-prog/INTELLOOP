@@ -7,11 +7,11 @@ const API_BASE = window.location.origin.includes(':3000') || window.location.ori
   : 'http://localhost:3000';
 
 export class ApiClient {
-  static async createInvestigation(question, depth = 'Standard', domain = 'General Intelligence') {
+  static async createInvestigation(question, depth = 'Standard', domain = 'General Intelligence', chaosMode = false) {
     const res = await fetch(`${API_BASE}/api/investigations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, depth, domain })
+      body: JSON.stringify({ question, depth, domain, chaos_mode: chaosMode })
     });
     if (!res.ok) {
       const err = await res.json();

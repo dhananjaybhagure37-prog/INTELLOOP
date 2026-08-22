@@ -22,7 +22,7 @@ except ImportError:
 
 from database.db import (
     get_investigation, list_investigations, delete_investigation,
-    list_logs, init_db, get_db, get_all_tool_stats, record_tool_usage
+    list_logs, init_db, get_db, get_all_tool_stats, record_tool_usage, save_investigation
 )
 from backend.agent_orchestrator import (
     ReActResearchOrchestrator, register_stream, unregister_stream
@@ -141,9 +141,20 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             inv_id = f"NX-{int(time.time()*1000)%10000:04d}-{''.join([chr(65 + int(c)) for c in str(int(time.time()))[-3:]])}"
             depth = data.get("depth", "Standard")
             domain = data.get("domain", "General Intelligence")
+            chaos_mode = data.get("chaos_mode", False)
+
+            # Persist record synchronously so it exists when frontend navigates
+            save_investigation({
+                "id": inv_id,
+                "question": question,
+                "status": "PLANNING",
+                "domain": domain,
+                "depth": depth,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            })
 
             # Spawn real autonomous ReAct worker in background thread
-            orchestrator = ReActResearchOrchestrator(inv_id, question, depth=depth, domain=domain)
+            orchestrator = ReActResearchOrchestrator(inv_id, question, depth=depth, domain=domain, chaos_mode=chaos_mode)
             worker = threading.Thread(target=orchestrator.run, daemon=True)
             worker.start()
 

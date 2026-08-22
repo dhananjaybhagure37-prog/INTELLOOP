@@ -96,9 +96,21 @@ export function renderDashboardView() {
               </div>
 
               <div class="flex items-center gap-3">
+              <div class="flex items-center gap-4">
+                <label class="hidden sm:flex items-center gap-2 cursor-pointer group">
+                  <div class="relative">
+                    <input type="checkbox" id="chaos-mode-toggle" class="sr-only">
+                    <div class="block bg-surface-container-high w-8 h-5 rounded-full border border-white/10 transition-colors group-hover:border-error/50"></div>
+                    <div class="dot absolute left-1 top-1 bg-gray-400 w-3 h-3 rounded-full transition-transform"></div>
+                  </div>
+                  <span class="text-xs text-gray-400 font-mono group-hover:text-error transition-colors flex items-center gap-1" title="Adversarial Test: Intentionally fail tools to demonstrate LangGraph autonomous recovery.">
+                    <span class="material-symbols-outlined text-[14px]">warning</span>
+                    Chaos Mode
+                  </span>
+                </label>
                 <div class="hidden sm:flex items-center gap-1.5 text-xs text-gray-400 font-mono">
                   <span class="text-emerald-400">●</span>
-                  <span>Anti-Hallucination Gate Active</span>
+                  <span>Anti-Hallucination Active</span>
                 </div>
                 <button id="dashboard-start-mission-btn" class="px-6 py-2.5 bg-gradient-to-r from-primary via-primary-container to-secondary text-[#002e6a] font-bold text-xs rounded-xl shadow-[0_0_20px_rgba(173,198,255,0.4)] hover:shadow-[0_0_30px_rgba(173,198,255,0.7)] hover:scale-[1.02] transition-all flex items-center gap-2">
                   <span class="material-symbols-outlined text-[18px]">rocket_launch</span>
@@ -169,7 +181,7 @@ export function renderDashboardView() {
                         <div class="w-1.5 h-1.5 rounded-full bg-primary absolute"></div>
                         ${activeMission ? activeMission.status : 'Autonomous Ready'}
                       </div>
-                      <span class="font-label-md text-xs text-on-surface-variant font-mono">ID: ${activeMission ? activeMission.id : 'NX-8842-OMEGA'}</span>
+                      <span class="font-label-md text-xs text-on-surface-variant font-mono">ID: ${activeMission ? activeMission.id : '---'}</span>
                     </div>
                     <h2 class="font-headline-md text-lg lg:text-xl text-on-surface mt-1 max-w-2xl leading-snug font-semibold">
                       "${activeMission ? activeMission.question || activeMission.title : 'Investigate the current electric vehicle market in India and identify the major trends, government policies, growth factors and challenges.'}"
@@ -379,8 +391,9 @@ export function bindDashboardEvents() {
       startBtn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">autorenew</span> Starting ReAct Agent...`;
 
       try {
+        const isChaosMode = document.getElementById('chaos-mode-toggle')?.checked || false;
         toast.show('Initializing ReAct Research Orchestrator...', 'info');
-        const res = await ApiClient.createInvestigation(question, 'Standard', 'Autonomous Research');
+        const res = await ApiClient.createInvestigation(question, 'Standard', 'Autonomous Research', isChaosMode);
         
         // Also update local store
         store.createMission({
