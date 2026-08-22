@@ -109,4 +109,27 @@ export class ApiClient {
     });
     return await res.json();
   }
+
+  static async getEvaluations() {
+    const res = await fetch(`${API_BASE}/api/evaluations`);
+    if (res.ok) {
+      const data = await res.json();
+      return data.evaluations || [];
+    }
+    return [];
+  }
+
+  static async runEvaluationSuite() {
+    const res = await fetch(`${API_BASE}/api/evaluations/run`, { method: 'POST' });
+    return await res.json();
+  }
+
+  static async submitHumanEvaluation(evalId, payload) {
+    const res = await fetch(`${API_BASE}/api/evaluations/${evalId}/human`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  }
 }

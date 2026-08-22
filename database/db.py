@@ -150,6 +150,49 @@ def init_db():
     )
     """)
 
+    # 9. Evaluations Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS evaluations (
+        id TEXT PRIMARY KEY,
+        scenario_type TEXT NOT NULL,
+        investigation_id TEXT,
+        baseline_or_autonomous TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT,
+        latency REAL DEFAULT 0.0,
+        status TEXT DEFAULT 'RUNNING',
+        accuracy_score REAL DEFAULT 0.0,
+        completion_score REAL DEFAULT 0.0,
+        reliability_score REAL DEFAULT 0.0,
+        robustness_score REAL DEFAULT 0.0,
+        evidence_quality_score REAL DEFAULT 0.0,
+        groundedness_score REAL DEFAULT 0.0,
+        hallucination_rate REAL DEFAULT 0.0,
+        recovery_rate REAL DEFAULT 0.0,
+        consistency_score REAL DEFAULT 0.0,
+        resource_efficiency_score REAL DEFAULT 0.0,
+        tool_call_count INTEGER DEFAULT 0,
+        failure_count INTEGER DEFAULT 0,
+        recovery_attempt_count INTEGER DEFAULT 0,
+        final_result TEXT
+    )
+    """)
+
+    # 10. Human Evaluations Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS human_evaluations (
+        evaluation_id TEXT PRIMARY KEY,
+        accuracy INTEGER DEFAULT 0,
+        evidence_quality INTEGER DEFAULT 0,
+        reasoning_quality INTEGER DEFAULT 0,
+        final_answer_quality INTEGER DEFAULT 0,
+        handled_uncertainty INTEGER DEFAULT 0,
+        refused_unsupported INTEGER DEFAULT 0,
+        comments TEXT,
+        FOREIGN KEY (evaluation_id) REFERENCES evaluations(id) ON DELETE CASCADE
+    )
+    """)
+
     # Seed initial tools if not present
     cursor.execute("SELECT COUNT(*) FROM tool_stats")
     if cursor.fetchone()[0] == 0:
@@ -400,6 +443,79 @@ def list_logs(limit=100):
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
+def save_evaluation(eval_data):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM evaluations WHERE id = ?", (eval_data.get("id"),))
+    exists = cursor.fetchone()
+    
+    if exists:
+        update_fields = []
+        update_values = []
+        allowed_keys = [
+            "end_time", "latency", "status", "accuracy_score", "completion_score",
+            "reliability_score", "robustness_score", "evidence_quality_score",
+            "groundedness_score", "hallucination_rate", "recovery_rate",
+            "consistency_score", "resource_efficiency_score", "tool_call_count",
+            "failure_count", "recovery_attempt_count", "final_result"
+        ]
+        for key in allowed_keys:
+            if key in eval_data:
+                update_fields.append(f"{key} = ?")
+                update_values.append(eval_data[key])
+        
+        if update_fields:
+            update_values.append(eval_data["id"])
+            query = f"UPDATE evaluations SET {', '.join(update_fields)} WHERE id = ?"
+            cursor.execute(query, tuple(update_values))
+    else:
+        cursor.execute("""
+        INSERT INTO evaluations (
+            id, scenario_type, investigation_id, baseline_or_autonomous,
+            start_time, status
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            eval_data.get("id"), eval_data.get("scenario_type"),
+            eval_data.get("investigation_id"), eval_data.get("baseline_or_autonomous"),
+            eval_data.get("start_time", time.strftime("%Y-%m-%dT%H:%M:%SZ")),
+            eval_data.get("status", "RUNNING")
+        ))
+    
+    conn.commit()
+    conn.close()
+
+def get_evaluations(limit=50):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT e.*, h.accuracy as human_accuracy, h.evidence_quality as human_evidence_quality,
+               h.reasoning_quality as human_reasoning, h.final_answer_quality as human_final,
+               h.handled_uncertainty, h.refused_unsupported, h.comments
+        FROM evaluations e
+        LEFT JOIN human_evaluations h ON e.id = h.evaluation_id
+        ORDER BY e.start_time DESC LIMIT ?
+    """, (limit,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def save_human_evaluation(human_eval):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT OR REPLACE INTO human_evaluations (
+        evaluation_id, accuracy, evidence_quality, reasoning_quality,
+        final_answer_quality, handled_uncertainty, refused_unsupported, comments
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        human_eval.get("evaluation_id"), human_eval.get("accuracy"),
+        human_eval.get("evidence_quality"), human_eval.get("reasoning_quality"),
+        human_eval.get("final_answer_quality"), human_eval.get("handled_uncertainty"),
+        human_eval.get("refused_unsupported"), human_eval.get("comments")
+    ))
+    conn.commit()
+    conn.close()
 
 # Initialize DB on load
 init_db()

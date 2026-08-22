@@ -18,15 +18,25 @@ try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass
+    # Manual .env loading fallback
+    try:
+        with open('.env') as f:
+            for line in f:
+                if '=' in line and not line.strip().startswith('#'):
+                    k, v = line.strip().split('=', 1)
+                    os.environ[k.strip()] = v.strip()
+    except Exception:
+        pass
 
 from database.db import (
     get_investigation, list_investigations, delete_investigation,
-    list_logs, init_db, get_db, get_all_tool_stats, record_tool_usage, save_investigation
+    list_logs, init_db, get_db, get_all_tool_stats, record_tool_usage, save_investigation,
+    get_evaluations, save_human_evaluation
 )
 from backend.agent_orchestrator import (
     ReActResearchOrchestrator, register_stream, unregister_stream
 )
+from backend.evaluation_runner import run_all_evaluations
 from backend.tools.search_tool import execute_web_search
 from backend.tools.arxiv_tool import execute_academic_search
 from backend.tools.fetch_tool import fetch_source_content
@@ -115,6 +125,12 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
                 "density": "standard"
             }
             self.send_json(200, settings)
+            return
+
+        # 8. Evaluations: /api/evaluations
+        if path == "/api/evaluations":
+            evals = get_evaluations(100)
+            self.send_json(200, {"evaluations": evals})
             return
 
         # Default fallback to static file serving
@@ -226,6 +242,36 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(201, {"success": True, "id": doc_id, "title": title})
             return
 
+        # 4. Run Evaluation Suite: POST /api/evaluations/run
+        if path == "/api/evaluations/run":
+            # Start background thread to run evaluations so we don't block
+            def run_and_log():
+                try:
+                    run_all_evaluations()
+                except Exception as e:
+                    print(f"Eval Error: {e}")
+                    
+            worker = threading.Thread(target=run_and_log, daemon=True)
+            worker.start()
+            self.send_json(202, {"success": True, "message": "Evaluation suite started."})
+            return
+            
+        # 5. Save Human Evaluation: POST /api/evaluations/{id}/human
+        if path.startswith("/api/evaluations/") and path.endswith("/human"):
+            eval_id = path.split("/")[3]
+            save_human_evaluation({
+                "evaluation_id": eval_id,
+                "accuracy": data.get("accuracy", 0),
+                "evidence_quality": data.get("evidence_quality", 0),
+                "reasoning_quality": data.get("reasoning_quality", 0),
+                "final_answer_quality": data.get("final_answer_quality", 0),
+                "handled_uncertainty": data.get("handled_uncertainty", 0),
+                "refused_unsupported": data.get("refused_unsupported", 0),
+                "comments": data.get("comments", "")
+            })
+            self.send_json(200, {"success": True})
+            return
+
         self.send_json(404, {"error": "API route not found."})
 
     def do_DELETE(self):
@@ -294,10 +340,12 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+class ReusableTCPServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+
 def run_server():
     init_db()
-    with socketserver.ThreadingTCPServer(("", PORT), IntelloopApiHandler) as httpd:
-        httpd.allow_reuse_address = True
+    with ReusableTCPServer(("", PORT), IntelloopApiHandler) as httpd:
         print(f"============================================================")
         print(f" INTELLOOP AI RESEARCH PLATFORM SERVER STARTED ON PORT {PORT}")
         print(f" URL: http://localhost:{PORT}")
