@@ -54,7 +54,30 @@ export function renderHeader() {
           <span class="material-symbols-outlined text-[16px]">rocket_launch</span>
           <span>Deploy Agent</span>
         </button>
+
+        <!-- Logout Trigger -->
+        <button id="logout-btn" class="bg-surface-container-high hover:bg-surface-container-highest text-error px-3 py-1.5 rounded-lg font-label-md text-xs shadow-sm transition-all flex items-center gap-1.5 border border-error/20" title="Logout">
+          <span class="material-symbols-outlined text-[16px]">logout</span>
+        </button>
       </div>
     </header>
   `;
 }
+
+// Attach logout event
+document.addEventListener('click', (e) => {
+  const logoutBtn = e.target.closest('#logout-btn');
+  if (logoutBtn) {
+    if (window.confirm("Are you sure you want to log out?")) {
+      import("https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js").then((module) => {
+        const { getAuth, signOut } = module;
+        const auth = getAuth();
+        signOut(auth).then(() => {
+          window.location.href = 'login.html';
+        }).catch((error) => {
+          console.error('Sign Out Error', error);
+        });
+      });
+    }
+  }
+});

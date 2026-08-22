@@ -269,6 +269,8 @@ export function bindExecutionEvents(missionId) {
         viewResultBtn.classList.remove('hidden');
         viewResultBtn.classList.add('flex');
       }
+      // Auto-navigate to result page
+      window.location.hash = `#result?id=${missionId}`;
     },
     (err) => {
       console.warn('SSE notification:', err);

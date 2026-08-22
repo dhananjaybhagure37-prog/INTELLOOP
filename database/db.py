@@ -199,18 +199,37 @@ def get_all_tool_stats():
 def save_investigation(inv):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("""
-    INSERT OR REPLACE INTO investigations (
-        id, question, status, domain, depth, confidence_score, confidence_level,
-        final_report, created_at, completed_at, execution_time_ms
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        inv.get("id"), inv.get("question"), inv.get("status", "PLANNING"),
-        inv.get("domain", "General Intelligence"), inv.get("depth", "Standard"),
-        inv.get("confidence_score", 0.0), inv.get("confidence_level", "MEDIUM"),
-        inv.get("final_report"), inv.get("created_at", time.strftime("%Y-%m-%dT%H:%M:%SZ")),
-        inv.get("completed_at"), inv.get("execution_time_ms", 0)
-    ))
+    
+    cursor.execute("SELECT id FROM investigations WHERE id = ?", (inv.get("id"),))
+    exists = cursor.fetchone()
+    
+    if exists:
+        update_fields = []
+        update_values = []
+        allowed_keys = ["question", "status", "domain", "depth", "confidence_score", "confidence_level", "final_report", "completed_at", "execution_time_ms"]
+        for key in allowed_keys:
+            if key in inv:
+                update_fields.append(f"{key} = ?")
+                update_values.append(inv[key])
+        
+        if update_fields:
+            update_values.append(inv["id"])
+            query = f"UPDATE investigations SET {', '.join(update_fields)} WHERE id = ?"
+            cursor.execute(query, tuple(update_values))
+    else:
+        cursor.execute("""
+        INSERT INTO investigations (
+            id, question, status, domain, depth, confidence_score, confidence_level,
+            final_report, created_at, completed_at, execution_time_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            inv.get("id"), inv.get("question"), inv.get("status", "PLANNING"),
+            inv.get("domain", "General Intelligence"), inv.get("depth", "Standard"),
+            inv.get("confidence_score", 0.0), inv.get("confidence_level", "MEDIUM"),
+            inv.get("final_report"), inv.get("created_at", time.strftime("%Y-%m-%dT%H:%M:%SZ")),
+            inv.get("completed_at"), inv.get("execution_time_ms", 0)
+        ))
+        
     conn.commit()
     conn.close()
 

@@ -83,6 +83,35 @@
     };
   </script>
 
+  <!-- Firebase Auth Guard -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCfffvNdT8Z2LQBjOd6oIzWQI22fAkNOF4",
+      authDomain: "project-x-eeb50.firebaseapp.com",
+      projectId: "project-x-eeb50",
+      storageBucket: "project-x-eeb50.firebasestorage.app",
+      messagingSenderId: "928625905542",
+      appId: "1:928625905542:web:d1c0ecd4a7e90bf76fa607",
+      measurementId: "G-D1Y89PBR0V"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        // Redirect to login if unauthenticated
+        window.location.href = 'login.html';
+      } else {
+        // Expose user info globally for the UI
+        window.currentUser = user;
+      }
+    });
+  </script>
+
   <!-- Design System Tokens & Custom App Styles -->
   <link rel="stylesheet" href="./css/design-tokens.css" />
   <link rel="stylesheet" href="./css/app.css" />
