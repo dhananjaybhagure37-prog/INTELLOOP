@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./assets/logo.jpg" width="200" alt="Intelloop Logo" style="border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); margin-bottom: 20px;" />
+
 # 🌐 INTELLOOP
 ### Autonomous Agentic AI Intelligence Platform
 
