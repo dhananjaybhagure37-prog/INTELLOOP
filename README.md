@@ -127,5 +127,4 @@ Navigate to **`http://localhost:3000`** in your browser. You will be greeted by 
 <div align="center">
 <i>Crafted with precision for the future of Autonomous Intelligence.</i>
 <br><br>
-<b>This project is licensed under the MIT License.</b>
 </div>
