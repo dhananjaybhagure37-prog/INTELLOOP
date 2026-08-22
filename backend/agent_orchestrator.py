@@ -77,6 +77,8 @@ class ReActResearchOrchestrator:
         self.visited_states = set()
         self.collected_sources = []
         self.extracted_facts = []
+        self.failed_tool_calls = {} # {tool_signature: failure_count}
+        self.executed_tool_calls = set() # {tool_signature}
 
     def record_step(self, step_type, title, summary, graph_node='MISSION', tool_name=None, tool_input=None, observation=None, agent_name='ReAct Agent'):
         self.step_index += 1
@@ -238,19 +240,6 @@ class ReActResearchOrchestrator:
                 new_messages.append(force_msg)
                 response2 = _invoke_with_retry(messages + new_messages)
                 new_messages.append(response2)
-                
-        elif hasattr(response, 'tool_calls') and response.tool_calls and len(messages) >= 2:
-            last_ai_msg = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
-            if last_ai_msg and hasattr(last_ai_msg, 'tool_calls') and last_ai_msg.tool_calls:
-                if [tc['name'] for tc in response.tool_calls] == [tc['name'] for tc in last_ai_msg.tool_calls] and \
-                   [tc.get('args', {}) for tc in response.tool_calls] == [tc.get('args', {}) for tc in last_ai_msg.tool_calls]:
-                    self.record_step(step_type='PLAN', title='Loop Detected', summary='Agent repeated the same tool call. Appending mock failure to bypass Gemini API.', graph_node='PLAN')
-                    # Instead of injecting a HumanMessage and re-invoking the LLM right here (wasting quota),
-                    # we append a mock ToolMessage so the graph handles the failure dynamically on the NEXT tick.
-                    for tool_call in response.tool_calls:
-                        new_messages.append(ToolMessage(content="Error: You already tried this exact tool call and it failed. Change your strategy or parameters.", tool_call_id=tool_call['id']))
-                    # We remove the tool calls from the AIMessage so we don't accidentally execute it in _execute_tools again
-                    response.tool_calls = []
 
         return {'messages': new_messages}
 
@@ -261,7 +250,15 @@ class ReActResearchOrchestrator:
         tool_replies = []
         for tool_call in last_message.tool_calls:
             tool_name = tool_call['name']
-            tool_args = tool_call['args']
+            tool_args = tool_call.get('args', {})
+            
+            # Normalize arguments for accurate deduplication and failure tracking
+            try:
+                norm_args = json.dumps(tool_args, sort_keys=True, default=str).strip().lower()
+            except Exception:
+                norm_args = str(tool_args).strip().lower()
+                
+            tool_key = f"{tool_name}:{norm_args}"
             
             self.record_step(
                 step_type='ACT',
@@ -272,6 +269,41 @@ class ReActResearchOrchestrator:
                 tool_input=tool_args
             )
             
+            # 1. Check if this exact tool call already failed previously
+            if tool_key in self.failed_tool_calls:
+                fail_cnt = self.failed_tool_calls[tool_key]
+                error_feedback = (
+                    f"Tool Execution Blocked: '{tool_name}' with identical arguments {tool_args} "
+                    f"already failed previously ({fail_cnt} times). "
+                    f"Do NOT repeat these exact arguments. "
+                    f"You have {len(self.collected_sources)} sources cataloged. "
+                    f"Either try a different search query, use another tool, or analyze the evidence and generate your final report."
+                )
+                tool_replies.append(ToolMessage(content=error_feedback, tool_call_id=tool_call['id']))
+                self.record_step(
+                    step_type='ERROR',
+                    title=f'Duplicate Failed Call Blocked: {tool_name}',
+                    summary=f'Blocked repeated failure on {tool_name}. Redirecting agent to alternative parameters.',
+                    graph_node='OBSERVE'
+                )
+                continue
+                
+            # 2. Check if this exact tool call already executed successfully
+            if tool_key in self.executed_tool_calls:
+                notice_feedback = (
+                    f"Tool Notice: '{tool_name}' with these arguments was already executed successfully. "
+                    f"You already have {len(self.collected_sources)} sources cataloged in your evidence pool. "
+                    f"Please proceed to synthesize your findings into the final report."
+                )
+                tool_replies.append(ToolMessage(content=notice_feedback, tool_call_id=tool_call['id']))
+                self.record_step(
+                    step_type='OBSERVE',
+                    title=f'Cached Findings: {tool_name}',
+                    summary=f'Tool call already executed. Prompting agent to synthesize from existing {len(self.collected_sources)} sources.',
+                    graph_node='OBSERVE'
+                )
+                continue
+
             tool_func = next((t for t in self.tools if t.name == tool_name), None)
             
             try:
@@ -346,6 +378,8 @@ class ReActResearchOrchestrator:
                 else:
                     compact_content = str(result)[:1500]
 
+                # Mark as successfully executed
+                self.executed_tool_calls.add(tool_key)
                 tool_replies.append(ToolMessage(content=compact_content, tool_call_id=tool_call['id']))
 
                 self.record_step(
@@ -354,16 +388,18 @@ class ReActResearchOrchestrator:
                     summary=f'Successfully received data from {tool_name}. ({len(self.collected_sources)} total sources cataloged)',
                     graph_node='OBSERVE',
                     tool_name=tool_name,
-                    observation=str(result)[:500] + '...'
+                    observation=compact_content[:500] + '...'
                 )
                 
             except Exception as e:
                 error_msg = str(e)
-                tool_replies.append(ToolMessage(content=f'Error executing tool: {error_msg}. Please replan or try a different approach.', tool_call_id=tool_call['id']))
+                self.failed_tool_calls[tool_key] = self.failed_tool_calls.get(tool_key, 0) + 1
+                fail_content = f"Error executing tool {tool_name}: {error_msg}. Please adjust your parameters, use another tool, or proceed to synthesize your final report."
+                tool_replies.append(ToolMessage(content=fail_content, tool_call_id=tool_call['id']))
                 self.record_step(
                     step_type='ERROR',
                     title=f'Tool Failure: {tool_name}',
-                    summary=f'Agent encountered an error: {error_msg}. Initiating autonomous recovery.',
+                    summary=f'Tool {tool_name} failed: {error_msg}. Failure tracked. Prompting agent for recovery.',
                     graph_node='OBSERVE',
                     tool_name=tool_name,
                     observation=error_msg
@@ -375,11 +411,15 @@ class ReActResearchOrchestrator:
         messages = state['messages']
         last_message = messages[-1]
         
+        # If last message is a ToolMessage, we MUST continue to 'agent' node so LLM processes results!
+        if isinstance(last_message, ToolMessage):
+            return 'continue'
+            
         if state.get('tool_call_count', 0) >= MAX_TOOL_CALLS_PER_INVESTIGATION:
             self.record_step(
                 step_type='ANALYZE',
                 title='Safeguard Triggered',
-                summary='Maximum tool calls reached. Forcing completion to prevent deadlock.',
+                summary=f'Maximum tool iterations reached ({MAX_TOOL_CALLS_PER_INVESTIGATION}). Finalizing intelligence report.',
                 graph_node='ANALYZE'
             )
             return 'end'
@@ -451,14 +491,26 @@ Synthesize all findings into a structured, professional markdown report with cle
             self.record_step(step_type='PLAN', title='State Graph Compilation', summary='Initializing LangGraph execution...', graph_node='PLAN')
             
             final_state = app.invoke(inputs, config={'recursion_limit': 20})
-            final_msg = final_state['messages'][-1]
             
-            if isinstance(final_msg.content, list):
-                final_report = " ".join([m.get("text", "") if isinstance(m, dict) else str(m) for m in final_msg.content])
-                if not final_report:
-                    final_report = str(final_msg.content)
-            else:
-                final_report = final_msg.content if final_msg.content else 'Agent finished but provided no text.'
+            # Find the best final AI response with substantial analysis
+            final_report = ""
+            for m in reversed(final_state['messages']):
+                if isinstance(m, AIMessage) and m.content:
+                    if isinstance(m.content, str) and len(m.content.strip()) > 50 and not m.content.startswith("Error:"):
+                        final_report = m.content.strip()
+                        break
+                    elif isinstance(m.content, list):
+                        text_val = " ".join([item.get("text", "") if isinstance(item, dict) else str(item) for item in m.content]).strip()
+                        if len(text_val) > 50:
+                            final_report = text_val
+                            break
+                            
+            if not final_report or len(final_report) < 80 or "You already tried" in final_report:
+                if self.collected_sources:
+                    print(f"[Orchestrator] Generating grounded intelligence report from {len(self.collected_sources)} collected sources.")
+                    final_report = self._synthesize_from_collected_sources()
+                else:
+                    final_report = "Investigation completed. No authoritative external findings could be verified."
             
             self.finalize_investigation(final_report)
 
