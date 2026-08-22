@@ -112,12 +112,22 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
 
         # 7. Settings: /api/settings
         if path == "/api/settings":
+            has_groq = bool(os.environ.get("GROQ_API_KEY"))
             has_deepseek = bool(os.environ.get("DEEPSEEK_API_KEY"))
+            
+            if has_groq:
+                provider_desc = "Groq (openai/gpt-oss-120b) High-Speed ReAct Reasoner"
+            elif has_deepseek:
+                provider_desc = "DeepSeek (deepseek-v4-flash) ReAct Reasoner"
+            else:
+                provider_desc = "Gemini 3.6 Flash / Intelligent ReAct Reasoner"
+                
             settings = {
                 "workspaceName": "Nexus Global Operations",
                 "researcherName": "Researcher",
-                "modelProvider": "DeepSeek (deepseek-v4-flash) ReAct Reasoner" if has_deepseek else "Gemini 3.6 Flash / Intelligent ReAct Reasoner",
+                "modelProvider": provider_desc,
                 "executionSpeed": 1,
+                "hasGroqKey": has_groq,
                 "hasDeepseekKey": has_deepseek,
                 "hasGeminiKey": bool(os.environ.get("GEMINI_API_KEY")),
                 "hasTavilyKey": bool(os.environ.get("TAVILY_API_KEY")),

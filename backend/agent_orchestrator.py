@@ -26,7 +26,7 @@ from backend.tools.langgraph_tools import get_all_langgraph_tools, set_chaos_mod
 from backend.tools.fact_extractor import extract_facts_from_content
 from backend.tools.verifier_tool import verify_claim_against_sources, detect_statistical_conflicts
 
-MAX_TOOL_CALLS_PER_INVESTIGATION = 10
+MAX_TOOL_CALLS_PER_INVESTIGATION = 4
 
 # Global event streams for SSE
 ACTIVE_STREAMS = {}  # { investigation_id: [queue.Queue(), ...] }
@@ -109,10 +109,20 @@ class ReActResearchOrchestrator:
 
     def _call_model(self, state: AgentState):
         messages = state['messages']
+        groq_key = os.environ.get('GROQ_API_KEY', '').strip()
         deepseek_key = os.environ.get('DEEPSEEK_API_KEY', '').strip()
         gemini_key = os.environ.get('GEMINI_API_KEY', '').strip()
 
-        if deepseek_key:
+        if groq_key:
+            provider_name = "Groq (openai/gpt-oss-120b)"
+            llm = ChatOpenAI(
+                model='openai/gpt-oss-120b',
+                api_key=groq_key,
+                base_url='https://api.groq.com/openai/v1',
+                temperature=0.1,
+                max_retries=0
+            )
+        elif deepseek_key:
             provider_name = "DeepSeek (deepseek-v4-flash)"
             llm = ChatOpenAI(
                 model='deepseek-v4-flash',
@@ -130,7 +140,7 @@ class ReActResearchOrchestrator:
                 max_retries=0
             )
         else:
-            raise ValueError('Neither DEEPSEEK_API_KEY nor GEMINI_API_KEY is set in the environment.')
+            raise ValueError('No active LLM API key (GROQ_API_KEY, DEEPSEEK_API_KEY, or GEMINI_API_KEY) found in the environment.')
 
         llm_with_tools = llm.bind_tools(self.tools)
         
@@ -157,7 +167,7 @@ class ReActResearchOrchestrator:
             self.visited_states.add(state_hash)
             
             max_retries = 3
-            retry_delay = 30 # seconds
+            retry_delay = 15 # seconds
             for attempt in range(max_retries):
                 try:
                     with LLM_API_LOCK:
@@ -165,22 +175,30 @@ class ReActResearchOrchestrator:
                         return llm_with_tools.invoke(msg_list)
                 except Exception as e:
                     error_msg = str(e)
-                    if '402' in error_msg or 'Insufficient Balance' in error_msg:
+                    if '401' in error_msg or 'AuthenticationError' in error_msg:
                         self.record_step(
                             step_type='ERROR',
-                            title='DeepSeek API Balance Exhausted',
-                            summary='DeepSeek API returned Insufficient Balance (HTTP 402). Please top up balance at platform.deepseek.com.',
+                            title='LLM Authentication Failed',
+                            summary=f'LLM Provider ({provider_name}) API key is invalid or unauthorized (HTTP 401).',
                             graph_node='ERROR'
                         )
-                        raise ValueError(f"DeepSeek API Insufficient Balance: {error_msg}")
-                    elif '401' in error_msg or 'AuthenticationError' in error_msg:
+                        raise ValueError(f"LLM Authentication Failed: {error_msg}")
+                    elif '402' in error_msg or 'Insufficient Balance' in error_msg:
                         self.record_step(
                             step_type='ERROR',
-                            title='DeepSeek Authentication Error',
-                            summary='DeepSeek API key is unauthorized or invalid (HTTP 401).',
+                            title='LLM Account Balance Exhausted',
+                            summary=f'LLM Provider ({provider_name}) returned Insufficient Balance (HTTP 402).',
                             graph_node='ERROR'
                         )
-                        raise ValueError(f"DeepSeek Authentication Error: {error_msg}")
+                        raise ValueError(f"LLM Insufficient Balance: {error_msg}")
+                    elif '404' in error_msg or 'model_not_found' in error_msg:
+                        self.record_step(
+                            step_type='ERROR',
+                            title='Model Not Found',
+                            summary=f'The specified model is unavailable on {provider_name}.',
+                            graph_node='ERROR'
+                        )
+                        raise ValueError(f"Model Not Found on {provider_name}: {error_msg}")
                     elif '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'rate_limit' in error_msg.lower():
                         if attempt < max_retries - 1:
                             import re
@@ -260,7 +278,6 @@ class ReActResearchOrchestrator:
                 if not tool_func:
                     raise Exception(f'Tool {tool_name} not found.')
                 result = tool_func.invoke(tool_args)
-                tool_replies.append(ToolMessage(content=str(result), tool_call_id=tool_call['id']))
                 
                 # Parse structured output to extract and persist sources
                 try:
@@ -317,6 +334,19 @@ class ReActResearchOrchestrator:
                                 if src_entry.get("snippet"):
                                     f_list = extract_facts_from_content(src_entry["snippet"], source_meta=src_entry)
                                     self.extracted_facts.extend(f_list)
+
+                    # Build high-density compact prompt message for LLM reasoning
+                    sources_summary = []
+                    for s in (raw_sources + raw_papers)[:5]:
+                        title = s.get("title") or "Source"
+                        url = s.get("url") or ""
+                        snip = (s.get("snippet") or s.get("abstract") or "")[:250]
+                        sources_summary.append(f"- [{title}]({url}): {snip}")
+                    compact_content = f"Search Results for '{tool_args.get('query', '')}':\n" + "\n".join(sources_summary)
+                else:
+                    compact_content = str(result)[:1500]
+
+                tool_replies.append(ToolMessage(content=compact_content, tool_call_id=tool_call['id']))
 
                 self.record_step(
                     step_type='OBSERVE',
