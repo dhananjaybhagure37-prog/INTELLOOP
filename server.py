@@ -1,6 +1,6 @@
 """
 INTELLOOP AI RESEARCH PLATFORM — MAIN BACKEND APPLICATION SERVER
-Handles REST APIs, Server-Sent Events (SSE) live streaming, SQLite storage, and static file serving.
+Handles REST APIs, Server-Sent Events (SSE) live streaming, SQLite storage, tool telemetry, and static file serving.
 Zero external pip dependencies required (runs on pure Python standard library).
 """
 
@@ -16,13 +16,14 @@ import queue
 
 from database.db import (
     get_investigation, list_investigations, delete_investigation,
-    list_logs, init_db, get_db
+    list_logs, init_db, get_db, get_all_tool_stats, record_tool_usage
 )
 from backend.agent_orchestrator import (
     ReActResearchOrchestrator, register_stream, unregister_stream
 )
 from backend.tools.search_tool import execute_web_search
 from backend.tools.fetch_tool import fetch_source_content
+from backend.tools.calculator_tool import execute_calculator
 from backend.tools.data_analyzer import analyze_comparative_data
 
 PORT = 3000
@@ -76,17 +77,9 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(200, {"logs": logs})
             return
 
-        # 5. Tools Catalog: /api/tools
+        # 5. Tools Catalog with SQLite Telemetry: /api/tools
         if path == "/api/tools":
-            tools = [
-                {"id": "tool-web-search", "name": "Web Search Engine", "category": "Intelligence", "status": "active", "totalUses": 184, "avgLatencyMs": 820, "description": "Autonomous multi-query web indexing, citation retrieval, and domain verification."},
-                {"id": "tool-fetch-source", "name": "Source Fetcher & Scraper", "category": "Intelligence", "status": "active", "totalUses": 126, "avgLatencyMs": 640, "description": "Fetches raw HTML web pages, removes boilerplate, and extracts structured text context."},
-                {"id": "tool-fact-extractor", "name": "Fact & Numerical Extractor", "category": "Analysis", "status": "active", "totalUses": 142, "avgLatencyMs": 480, "description": "Extracts percentages, financial values, dates, and named policy entities with source links."},
-                {"id": "tool-verifier", "name": "Claim Verification & Conflict Engine", "category": "Verification", "status": "active", "totalUses": 165, "avgLatencyMs": 380, "description": "Evaluates multi-source evidence backing, detects statistical disagreements, and computes confidence scores."},
-                {"id": "tool-data-analyzer", "name": "Statistical & Comparative Analyzer", "category": "Compute", "status": "active", "totalUses": 98, "avgLatencyMs": 520, "description": "Performs comparative modeling, CAGR calculations, and tabular matrix synthesis."},
-                {"id": "tool-knowledge-base", "name": "Vector Knowledge Base", "category": "Memory", "status": "active", "totalUses": 110, "avgLatencyMs": 310, "description": "Dense vector search across indexed whitepapers and regulatory policies."},
-                {"id": "tool-summarizer", "name": "Executive Summarizer", "category": "Synthesis", "status": "active", "totalUses": 154, "avgLatencyMs": 420, "description": "Compiles structured briefings, key takeaways, and strategic recommendations."}
-            ]
+            tools = get_all_tool_stats()
             self.send_json(200, {"tools": tools})
             return
 
@@ -109,6 +102,7 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
                 "executionSpeed": 1,
                 "hasGeminiKey": bool(os.environ.get("GEMINI_API_KEY")),
                 "hasTavilyKey": bool(os.environ.get("TAVILY_API_KEY")),
+                "hasSerperKey": bool(os.environ.get("SERPER_API_KEY")),
                 "hasOpenAiKey": bool(os.environ.get("OPENAI_API_KEY")),
                 "theme": "dark-space",
                 "density": "standard"
@@ -160,23 +154,31 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             tool_id = path.split("/")[3]
             params = data.get("params", {})
             
-            if tool_id == "tool-web-search":
+            if tool_id in ("tool-calculator", "calculator"):
+                res = execute_calculator(params.get("expression") or params.get("query", "25% of 2400"))
+                record_tool_usage("tool-calculator", success=res["success"], latency_ms=res.get("elapsed_ms", 50))
+                self.send_json(200, res)
+                return
+            elif tool_id in ("tool-web-search", "searchWeb"):
                 res = execute_web_search(params.get("query", "AI trends 2026"), max_results=4)
+                record_tool_usage("tool-web-search", success=res["success"], latency_ms=res.get("elapsed_ms", 700))
                 self.send_json(200, res)
                 return
-            elif tool_id == "tool-fetch-source":
+            elif tool_id in ("tool-fetch-source", "fetchSource"):
                 res = fetch_source_content(params.get("url", "https://pib.gov.in"))
+                record_tool_usage("tool-fetch-source", success=res["success"], latency_ms=res.get("elapsed_ms", 600))
                 self.send_json(200, res)
                 return
-            elif tool_id == "tool-data-analyzer":
+            elif tool_id in ("tool-data-analyzer", "analyzeData"):
                 res = analyze_comparative_data("Comparative Benchmark", [])
+                record_tool_usage("tool-data-analyzer", success=res["success"], latency_ms=100)
                 self.send_json(200, res)
                 return
             else:
                 self.send_json(200, {
                     "success": True,
                     "tool": tool_id,
-                    "observation": f"Executed tool {tool_id} in isolated sandbox. Telemetry returned status 200 OK."
+                    "observation": f"Executed tool {tool_id} in sandbox. Telemetry status 200 OK."
                 })
                 return
 
@@ -250,9 +252,13 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
                         active = False
                 except queue.Empty:
                     # Keep-alive heartbeat comment
-                    self.wfile.write(b": keepalive\n\n")
-                    self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
+                    try:
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                    except Exception:
+                        active = False
+                        break
+        except Exception:
             pass
         finally:
             unregister_stream(inv_id, q)

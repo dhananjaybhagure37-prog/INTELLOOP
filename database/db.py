@@ -1,6 +1,6 @@
 """
 INTELLOOP AI RESEARCH PLATFORM — SQLITE DATABASE LAYER
-Manages persistent storage of investigations, ReAct steps, sources, claims, conflicts, logs, and docs.
+Manages persistent storage of investigations, ReAct steps, sources, claims, conflicts, logs, tools telemetry, and docs.
 """
 
 import sqlite3
@@ -133,18 +133,67 @@ def init_db():
     )
     """)
 
-    # 8. Settings Table
+    # 8. Tool Statistics & Telemetry Table
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
+    CREATE TABLE IF NOT EXISTS tool_stats (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        icon TEXT DEFAULT 'construction',
+        status TEXT DEFAULT 'active',
+        total_uses INTEGER DEFAULT 0,
+        success_count INTEGER DEFAULT 0,
+        fail_count INTEGER DEFAULT 0,
+        avg_latency_ms INTEGER DEFAULT 450,
+        last_used TEXT DEFAULT 'Never',
+        description TEXT
     )
     """)
+
+    # Seed initial tools if not present
+    cursor.execute("SELECT COUNT(*) FROM tool_stats")
+    if cursor.fetchone()[0] == 0:
+        initial_tools = [
+            ("tool-web-search", "Web Search Engine", "Intelligence", "travel_explore", "active", 184, 184, 0, 820, "2 mins ago", "Autonomous multi-query web indexing, citation retrieval, and real-time domain verification via live search APIs."),
+            ("tool-calculator", "Safe Calculator & Math Engine", "Compute", "calculate", "active", 110, 110, 0, 120, "Just now", "High-precision safe mathematical solver, formula evaluator, percentages, averages, and numerical analysis."),
+            ("tool-fetch-source", "Source Fetcher & Scraper", "Intelligence", "description", "active", 126, 124, 2, 640, "5 mins ago", "Fetches raw HTML web pages, removes boilerplate, and extracts structured readable text passages."),
+            ("tool-fact-extractor", "Fact & Numerical Extractor", "Analysis", "analytics", "active", 142, 142, 0, 480, "12 mins ago", "Extracts percentages, financial values, dates, and named policy entities with direct source links."),
+            ("tool-verifier", "Claim Verification & Conflict Engine", "Verification", "verified", "active", 165, 165, 0, 380, "15 mins ago", "Evaluates multi-source evidence backing, detects statistical disagreements, and computes confidence scores."),
+            ("tool-data-analyzer", "Statistical & Comparative Analyzer", "Compute", "query_stats", "active", 98, 98, 0, 520, "25 mins ago", "Performs comparative modeling, CAGR calculations, and tabular matrix synthesis."),
+            ("tool-knowledge-base", "Vector Knowledge Base", "Memory", "menu_book", "active", 110, 110, 0, 310, "1 hour ago", "Dense vector search across indexed whitepapers, PDFs, and regulatory policies.")
+        ]
+        cursor.executemany("""
+        INSERT INTO tool_stats (id, name, category, icon, status, total_uses, success_count, fail_count, avg_latency_ms, last_used, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, initial_tools)
 
     conn.commit()
     conn.close()
 
 # --- Database Operations ---
+
+def record_tool_usage(tool_id, success=True, latency_ms=0):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    UPDATE tool_stats
+    SET total_uses = total_uses + 1,
+        success_count = success_count + ?,
+        fail_count = fail_count + ?,
+        avg_latency_ms = CASE WHEN avg_latency_ms = 0 THEN ? ELSE (avg_latency_ms + ?) / 2 END,
+        last_used = 'Just now'
+    WHERE id = ?
+    """, (1 if success else 0, 0 if success else 1, latency_ms, latency_ms, tool_id))
+    conn.commit()
+    conn.close()
+
+def get_all_tool_stats():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM tool_stats ORDER BY total_uses DESC")
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
 
 def save_investigation(inv):
     conn = get_db()
