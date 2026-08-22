@@ -56,16 +56,19 @@ function buildResultHtml(inv) {
   const sources = inv.sources || [];
   const conflicts = inv.conflicts || [];
 
-  // Parse simple markdown into styled HTML
+  // Parse simple markdown into styled HTML including clickable links
   let parsedHtml = rawMarkdown
     .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold text-on-surface pb-3 mb-4 border-b border-white/10">$1</h1>')
     .replace(/^## (.*$)/gim, '<h2 class="text-lg font-bold text-primary mt-6 mb-3 flex items-center gap-2"><span class="w-1.5 h-4 bg-primary rounded"></span>$1</h2>')
     .replace(/^### (.*$)/gim, '<h3 class="text-sm font-semibold text-secondary mt-4 mb-2">$1</h3>')
     .replace(/\*\*(.*?)\*\*/gim, '<strong class="text-on-surface font-semibold">$1</strong>')
     .replace(/\*(.*?)\*/gim, '<em class="text-primary">$1</em>')
+    .replace(/\[(.*?)\]\((https?:\/\/[^\s\)]+)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-primary underline hover:text-secondary font-semibold transition-colors inline-flex items-center gap-0.5">$1<span class="material-symbols-outlined text-[11px]">open_in_new</span></a>')
     .replace(/```([\s\S]*?)```/gim, '<pre class="bg-[#070d1f] p-4 rounded-xl font-mono text-xs text-primary border border-white/10 my-3 overflow-x-auto"><code>$1</code></pre>')
     .replace(/^> (.*$)/gim, '<blockquote class="border-l-4 border-primary bg-primary/10 p-3 rounded-r-lg text-xs text-primary-fixed my-3">$1</blockquote>')
     .replace(/\n\n/g, '</p><p class="text-xs text-on-surface-variant leading-relaxed mb-3">');
+
+  const isGrounded = sources.length > 0;
 
   return `
     <!-- Top Action Bar -->
@@ -77,9 +80,17 @@ function buildResultHtml(inv) {
         <div>
           <div class="flex items-center gap-2">
             <span class="font-mono text-primary font-bold text-xs">${inv.id}</span>
-            <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
-              Verified & Grounded
-            </span>
+            ${isGrounded ? `
+              <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                Verified & Grounded (${sources.length} Sources)
+              </span>
+            ` : `
+              <span class="px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                Unverified (0 Sources Retrieved)
+              </span>
+            `}
           </div>
           <h1 class="text-base font-bold text-on-surface mt-0.5 max-w-xl truncate">${inv.question}</h1>
         </div>
@@ -106,11 +117,24 @@ function buildResultHtml(inv) {
       </div>
     </div>
 
+    <!-- Zero Sources Warning Banner if ungrounded -->
+    ${!isGrounded ? `
+      <div class="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-5 shadow-lg flex flex-col gap-2">
+        <div class="flex items-center gap-2 text-amber-400 font-bold text-xs">
+          <span class="material-symbols-outlined text-[18px]">warning</span>
+          <span>Source Collection Incomplete: 0 External Sources Grounded</span>
+        </div>
+        <p class="text-xs text-on-surface leading-relaxed">
+          No external web or academic sources were successfully cataloged during this investigation. The findings below reflect baseline model synthesis without external grounding.
+        </p>
+      </div>
+    ` : ''}
+
     <!-- Conflicting Evidence Alert Box if detected -->
     ${conflicts.length > 0 ? `
       <div class="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-5 shadow-lg flex flex-col gap-2">
         <div class="flex items-center gap-2 text-amber-400 font-bold text-xs">
-          <span class="material-symbols-outlined text-[18px]">warning</span>
+          <span class="material-symbols-outlined text-[18px]">compare_arrows</span>
           <span>Conflicting Evidence Detected Across Consulted Sources</span>
         </div>
         <p class="text-xs text-on-surface leading-relaxed">
@@ -155,10 +179,10 @@ function buildResultHtml(inv) {
           <div class="space-y-3">
             ${claims.length === 0 ? `
               <div class="p-4 rounded-xl bg-surface-lowest text-xs text-on-surface-variant">
-                Multi-source evidence evaluated across ${sources.length} sources.
+                ${sources.length > 0 ? `Evidence evaluated across ${sources.length} sources.` : 'No verified claims available.'}
               </div>
             ` : claims.map(c => `
-              <div class="p-3.5 rounded-xl bg-surface-lowest border border-white/5 flex flex-col gap-2 hover:border-primary/30 transition-all cursor-pointer claim-card group">
+              <div class="p-3.5 rounded-xl bg-surface-lowest border border-white/5 flex flex-col gap-2 hover:border-primary/30 transition-all claim-card group">
                 <div class="flex items-center justify-between">
                   <span class="px-2 py-0.5 rounded text-[10px] font-bold font-mono ${c.confidence === 'HIGH' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'}">
                     ${c.status || 'VERIFIED'}
@@ -185,19 +209,29 @@ function buildResultHtml(inv) {
           </h3>
 
           <div class="space-y-2.5 text-xs">
-            ${sources.map(s => `
+            ${sources.length === 0 ? `
+              <div class="p-4 rounded-xl bg-surface-lowest text-xs text-on-surface-variant">
+                No external sources recorded for this mission.
+              </div>
+            ` : sources.map(s => `
               <a href="${s.url}" target="_blank" rel="noopener noreferrer" 
                  class="p-3 rounded-xl bg-surface-lowest/80 border border-white/5 hover:border-primary/40 hover:bg-white/5 transition-all flex flex-col gap-1 group block">
                 <div class="flex items-start justify-between">
                   <span class="font-bold text-on-surface text-xs group-hover:text-primary transition-colors line-clamp-1">
-                    ${s.title}
+                    ${s.title || s.url}
                   </span>
                   <span class="material-symbols-outlined text-[14px] text-on-surface-variant group-hover:text-primary shrink-0 ml-1">open_in_new</span>
                 </div>
-                <div class="flex items-center gap-2 text-[10px] font-mono text-on-surface-variant">
-                  <span class="text-secondary">${s.publisher || 'Web'}</span>
+                ${s.snippet ? `
+                  <p class="text-[11px] text-on-surface-variant/80 line-clamp-2 leading-relaxed mt-0.5">
+                    ${s.snippet}
+                  </p>
+                ` : ''}
+                <div class="flex items-center gap-2 text-[10px] font-mono text-on-surface-variant mt-1">
+                  <span class="text-secondary font-semibold">${s.publisher || 'Web'}</span>
                   <span>•</span>
                   <span class="text-emerald-400">${s.authority || 'High Authority'}</span>
+                  ${s.source_type ? `<span>•</span><span>${s.source_type}</span>` : ''}
                 </div>
               </a>
             `).join('')}
