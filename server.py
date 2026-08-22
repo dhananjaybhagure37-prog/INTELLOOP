@@ -16,7 +16,7 @@ import queue
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=True)
 except ImportError:
     # Manual .env loading fallback
     try:
@@ -159,6 +159,9 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             domain = data.get("domain", "General Intelligence")
             chaos_mode = data.get("chaos_mode", False)
 
+            print(f"[SERVER] POST /api/investigations: Received mission request id={inv_id}, domain='{domain}', depth='{depth}', chaos={chaos_mode}")
+            print(f"[SERVER] Prompt: \"{question[:100]}...\"")
+
             # Persist record synchronously so it exists when frontend navigates
             save_investigation({
                 "id": inv_id,
@@ -173,6 +176,7 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             orchestrator = ReActResearchOrchestrator(inv_id, question, depth=depth, domain=domain, chaos_mode=chaos_mode)
             worker = threading.Thread(target=orchestrator.run, daemon=True)
             worker.start()
+            print(f"[SERVER] Dispatched LangGraph autonomous worker thread for investigation {inv_id}")
 
             self.send_json(201, {
                 "success": True,

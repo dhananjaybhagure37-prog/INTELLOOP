@@ -5,6 +5,9 @@ import queue
 import os
 import random
 import hashlib
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 from typing import TypedDict, Annotated, Sequence, List
 import operator
@@ -299,14 +302,15 @@ class ReActResearchOrchestrator:
 Your objective: {self.question}
 
 CRITICAL INSTRUCTIONS:
-1. You MUST actually perform internet research using the tools provided (e.g. web_search, academic_search). Do not answer from your internal knowledge.
-2. If a tool fails, autonomously replan and use a different tool or strategy. Do not give up easily.
-3. For every source used, preserve and return the ACTUAL source URL in your final report.
-4. If two sources disagree, detect the conflict, compare reliability, and explicitly explain the resolution. If uncertainty remains, report it.
-5. Do NOT fabricate facts or URLs. If evidence is insufficient, state it explicitly.
-6. The final report MUST contain a section '## Sources & Research Papers' with clickable markdown links (e.g., [Source Title](URL)) to every web source and academic paper you retrieved.
+1. You MUST actually perform internet research using the tools provided (e.g. web_search, academic_search). Do not answer from purely internal knowledge without verifying.
+2. Formulate 1 to 3 targeted, high-quality search queries to gather comprehensive facts and evidence.
+3. Once you have received the necessary search results and findings from the tools, DO NOT make endless additional tool calls. Immediately proceed to analyze the evidence and write your comprehensive final report.
+4. For every source used, preserve and return the ACTUAL source URL in your final report.
+5. If two sources disagree, detect the conflict, compare reliability, and explicitly explain the resolution. If uncertainty remains, report it.
+6. Do NOT fabricate facts or URLs. If evidence is insufficient, state it explicitly.
+7. The final report MUST contain a section '## Sources & Research Papers' with clickable markdown links (e.g., [Source Title](URL)) to every web source and academic paper you retrieved.
 
-When you have sufficient information, synthesize it into a comprehensive markdown report. Do NOT output raw tool output in the final report."""
+Synthesize all findings into a structured, professional markdown report with clear headings."""
 
             inputs = {
                 'messages': [
@@ -323,7 +327,7 @@ When you have sufficient information, synthesize it into a comprehensive markdow
             final_msg = final_state['messages'][-1]
             
             if isinstance(final_msg.content, list):
-                final_report = " ".join([m.get("text", "") for m in final_msg.content if isinstance(m, dict) and m.get("type") == "text"])
+                final_report = " ".join([m.get("text", "") if isinstance(m, dict) else str(m) for m in final_msg.content])
                 if not final_report:
                     final_report = str(final_msg.content)
             else:
@@ -340,7 +344,14 @@ When you have sufficient information, synthesize it into a comprehensive markdow
                 'completed_at': time.strftime('%Y-%m-%dT%H:%M:%SZ'),
                 'execution_time_ms': elapsed_total_ms
             })
-            broadcast_event(self.inv_id, 'error', {'error': str(e)})
+            self.record_step(
+                step_type='ERROR',
+                title='Quota Limit Reached',
+                summary='Gemini API daily quota exhausted. Please retry later or verify billing.',
+                graph_node='ERROR'
+            )
+            broadcast_event(self.inv_id, 'node_change', {'node': 'ERROR', 'status': 'FAILED'})
+            broadcast_event(self.inv_id, 'complete', {'investigation_id': self.inv_id, 'status': 'FAILED', 'error': str(e)})
             
         except Exception as e:
             print(f'Orchestrator Error: {e}')
@@ -358,9 +369,10 @@ When you have sufficient information, synthesize it into a comprehensive markdow
                 step_type='ERROR',
                 title='Investigation Exception',
                 summary=f'Execution error: {str(e)}',
-                graph_node='MISSION'
+                graph_node='ERROR'
             )
-            broadcast_event(self.inv_id, 'error', {'error': str(e)})
+            broadcast_event(self.inv_id, 'node_change', {'node': 'ERROR', 'status': 'FAILED'})
+            broadcast_event(self.inv_id, 'complete', {'investigation_id': self.inv_id, 'status': 'FAILED', 'error': str(e)})
 
     def finalize_investigation(self, final_report, confidence=98.5):
         elapsed_total_ms = int((time.time() - self.start_time) * 1000)

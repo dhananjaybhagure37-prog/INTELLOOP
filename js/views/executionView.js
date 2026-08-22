@@ -171,20 +171,29 @@ export function renderExecutionView(missionId) {
 function renderStepCardHtml(s, isLatest = false) {
   let icon = 'bolt';
   let iconColor = 'text-primary';
+  let cardBorder = isLatest ? 'border-primary/40 shadow-[0_0_15px_rgba(173,198,255,0.15)]' : 'border-white/5';
+  let typeBadge = 'bg-surface-container-high text-primary';
+
   if (s.type === 'PLAN') { icon = 'route'; iconColor = 'text-secondary'; }
   else if (s.type === 'ACT') { icon = 'construction'; iconColor = 'text-primary-container'; }
   else if (s.type === 'OBSERVE') { icon = 'visibility'; iconColor = 'text-tertiary'; }
   else if (s.type === 'VERIFY' || s.type === 'SYNTHESIZE') { icon = 'verified'; iconColor = 'text-emerald-400'; }
+  else if (s.type === 'ERROR') { 
+    icon = 'warning'; 
+    iconColor = 'text-rose-400'; 
+    cardBorder = 'border-rose-500/30 bg-rose-950/20';
+    typeBadge = 'bg-rose-500/20 text-rose-300';
+  }
 
   return `
-    <div class="p-3.5 rounded-xl bg-surface-lowest/80 border ${isLatest ? 'border-primary/40 shadow-[0_0_15px_rgba(173,198,255,0.15)]' : 'border-white/5'} flex flex-col gap-2 transition-all">
+    <div class="p-3.5 rounded-xl bg-surface-lowest/80 border ${cardBorder} flex flex-col gap-2 transition-all">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <span class="w-6 h-6 rounded-full bg-surface-container-highest ${iconColor} flex items-center justify-center text-[12px] shrink-0">
             <span class="material-symbols-outlined text-[14px]">${icon}</span>
           </span>
           <span class="font-label-sm text-xs font-bold text-on-surface">${s.title}</span>
-          <span class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-surface-container-high text-primary">${s.type}</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${typeBadge}">${s.type}</span>
         </div>
         <span class="text-[10px] font-mono text-on-surface-variant">${s.timestamp || ''}</span>
       </div>
@@ -226,12 +235,21 @@ export function bindExecutionEvents(missionId) {
 
   // Load existing investigation from backend
   ApiClient.getInvestigation(missionId).then(inv => {
-    if (inv && inv.steps && stepsContainer) {
-      stepsContainer.innerHTML = inv.steps.map((s, idx) => renderStepCardHtml(s, idx === inv.steps.length - 1)).join('');
-      if (counter) counter.innerText = inv.steps.length;
-      if (inv.status === 'COMPLETED' && viewResultBtn) {
-        viewResultBtn.classList.remove('hidden');
-        viewResultBtn.classList.add('flex');
+    if (inv && stepsContainer) {
+      if (inv.steps && inv.steps.length > 0) {
+        stepsContainer.innerHTML = inv.steps.map((s, idx) => renderStepCardHtml(s, idx === inv.steps.length - 1)).join('');
+        if (counter) counter.innerText = inv.steps.length;
+      }
+      if (inv.status === 'COMPLETED' && statusBadge) {
+        statusBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400';
+        statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> COMPLETED';
+        if (viewResultBtn) {
+          viewResultBtn.classList.remove('hidden');
+          viewResultBtn.classList.add('flex');
+        }
+      } else if (inv.status === 'FAILED' && statusBadge) {
+        statusBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-400';
+        statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> FAILED';
       }
     }
   }).catch(err => console.warn('Could not pre-load investigation:', err));
@@ -260,6 +278,16 @@ export function bindExecutionEvents(missionId) {
       if (nodeTag) nodeTag.innerText = `Node: ${node}`;
     },
     (completeData) => {
+      if (completeData && completeData.status === 'FAILED') {
+        toast.show(`Investigation halted: ${completeData.error || 'Execution failed.'}`, 'error');
+        if (statusBadge) {
+          statusBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-400';
+          statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> FAILED';
+        }
+        if (nodeTag) nodeTag.innerText = 'Node: ERROR';
+        return;
+      }
+
       toast.show('Autonomous research completed! View your verified report.', 'success');
       if (statusBadge) {
         statusBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400';
