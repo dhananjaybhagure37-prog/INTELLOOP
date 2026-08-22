@@ -112,11 +112,13 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
 
         # 7. Settings: /api/settings
         if path == "/api/settings":
+            has_deepseek = bool(os.environ.get("DEEPSEEK_API_KEY"))
             settings = {
                 "workspaceName": "Nexus Global Operations",
                 "researcherName": "Researcher",
-                "modelProvider": "Gemini 2.5 Pro / Intelligent ReAct Reasoner",
+                "modelProvider": "DeepSeek (deepseek-v4-flash) ReAct Reasoner" if has_deepseek else "Gemini 3.6 Flash / Intelligent ReAct Reasoner",
                 "executionSpeed": 1,
+                "hasDeepseekKey": has_deepseek,
                 "hasGeminiKey": bool(os.environ.get("GEMINI_API_KEY")),
                 "hasTavilyKey": bool(os.environ.get("TAVILY_API_KEY")),
                 "hasSerperKey": bool(os.environ.get("SERPER_API_KEY")),

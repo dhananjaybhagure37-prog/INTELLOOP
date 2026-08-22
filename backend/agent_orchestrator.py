@@ -13,6 +13,7 @@ from typing import TypedDict, Annotated, Sequence, List
 import operator
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END
 from langchain_core.tools import tool
@@ -30,7 +31,7 @@ MAX_TOOL_CALLS_PER_INVESTIGATION = 10
 # Global event streams for SSE
 ACTIVE_STREAMS = {}  # { investigation_id: [queue.Queue(), ...] }
 STREAM_LOCK = threading.Lock()
-GEMINI_API_LOCK = threading.Lock()
+LLM_API_LOCK = threading.Lock()
 
 class QuotaExhaustedError(Exception):
     pass
@@ -108,16 +109,35 @@ class ReActResearchOrchestrator:
 
     def _call_model(self, state: AgentState):
         messages = state['messages']
-        api_key = os.environ.get('GEMINI_API_KEY', '')
-        if not api_key:
-             raise ValueError('GEMINI_API_KEY is not set in the environment.')
-        llm = ChatGoogleGenerativeAI(model='gemini-3.6-flash', temperature=0.1, google_api_key=api_key, max_retries=0)
+        deepseek_key = os.environ.get('DEEPSEEK_API_KEY', '').strip()
+        gemini_key = os.environ.get('GEMINI_API_KEY', '').strip()
+
+        if deepseek_key:
+            provider_name = "DeepSeek (deepseek-v4-flash)"
+            llm = ChatOpenAI(
+                model='deepseek-v4-flash',
+                api_key=deepseek_key,
+                base_url='https://api.deepseek.com',
+                temperature=0.1,
+                max_retries=0
+            )
+        elif gemini_key:
+            provider_name = "Gemini (gemini-3.6-flash)"
+            llm = ChatGoogleGenerativeAI(
+                model='gemini-3.6-flash',
+                temperature=0.1,
+                google_api_key=gemini_key,
+                max_retries=0
+            )
+        else:
+            raise ValueError('Neither DEEPSEEK_API_KEY nor GEMINI_API_KEY is set in the environment.')
+
         llm_with_tools = llm.bind_tools(self.tools)
         
         self.record_step(
             step_type='PLAN',
             title='Agent Reasoning Cycle',
-            summary='LLM is analyzing current state and deciding next action...',
+            summary=f'LLM ({provider_name}) is analyzing current state and deciding next action...',
             graph_node='PLAN'
         )
         
@@ -132,20 +152,36 @@ class ReActResearchOrchestrator:
             
             state_hash = hashlib.md5(json.dumps(msg_contents).encode()).hexdigest()
             if state_hash in self.visited_states:
-                self.record_step(step_type='PLAN', title='State Deadlock Prevented', summary='Exact duplicate state detected. Bypassing Gemini API to save quota.', graph_node='PLAN')
+                self.record_step(step_type='PLAN', title='State Deadlock Prevented', summary='Exact duplicate state detected. Bypassing LLM API to save quota.', graph_node='PLAN')
                 return AIMessage(content="Error: Exact duplicate state detected. Tool skipped to prevent deadlock.")
             self.visited_states.add(state_hash)
             
             max_retries = 3
-            retry_delay = 35 # seconds
+            retry_delay = 30 # seconds
             for attempt in range(max_retries):
                 try:
-                    with GEMINI_API_LOCK:
+                    with LLM_API_LOCK:
                         self.llm_call_count += 1
                         return llm_with_tools.invoke(msg_list)
                 except Exception as e:
                     error_msg = str(e)
-                    if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg:
+                    if '402' in error_msg or 'Insufficient Balance' in error_msg:
+                        self.record_step(
+                            step_type='ERROR',
+                            title='DeepSeek API Balance Exhausted',
+                            summary='DeepSeek API returned Insufficient Balance (HTTP 402). Please top up balance at platform.deepseek.com.',
+                            graph_node='ERROR'
+                        )
+                        raise ValueError(f"DeepSeek API Insufficient Balance: {error_msg}")
+                    elif '401' in error_msg or 'AuthenticationError' in error_msg:
+                        self.record_step(
+                            step_type='ERROR',
+                            title='DeepSeek Authentication Error',
+                            summary='DeepSeek API key is unauthorized or invalid (HTTP 401).',
+                            graph_node='ERROR'
+                        )
+                        raise ValueError(f"DeepSeek Authentication Error: {error_msg}")
+                    elif '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'rate_limit' in error_msg.lower():
                         if attempt < max_retries - 1:
                             import re
                             delay = retry_delay
@@ -158,7 +194,7 @@ class ReActResearchOrchestrator:
                             self.record_step(
                                 step_type='ERROR',
                                 title='Rate Limit Exceeded',
-                                summary=f'Gemini API quota exceeded. Pausing for {delay:.1f} seconds before retry...',
+                                summary=f'LLM API rate limit reached. Pausing for {delay:.1f} seconds before retry...',
                                 graph_node='PLAN'
                             )
                             time.sleep(delay)
@@ -167,10 +203,10 @@ class ReActResearchOrchestrator:
                             self.record_step(
                                 step_type='ERROR',
                                 title='Quota Exhausted',
-                                summary='Project Gemini API daily quota exhausted.',
+                                summary='LLM API quota exhausted.',
                                 graph_node='PLAN'
                             )
-                            raise QuotaExhaustedError("Project Gemini quota is exhausted. Mission aborted.")
+                            raise QuotaExhaustedError("LLM API quota is exhausted. Mission aborted.")
                     else:
                         raise e
 
