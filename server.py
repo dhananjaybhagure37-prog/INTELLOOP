@@ -22,6 +22,7 @@ from backend.agent_orchestrator import (
     ReActResearchOrchestrator, register_stream, unregister_stream
 )
 from backend.tools.search_tool import execute_web_search
+from backend.tools.arxiv_tool import execute_academic_search
 from backend.tools.fetch_tool import fetch_source_content
 from backend.tools.calculator_tool import execute_calculator
 from backend.tools.data_analyzer import analyze_comparative_data
@@ -154,12 +155,17 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             tool_id = path.split("/")[3]
             params = data.get("params", {})
             
-            if tool_id in ("tool-calculator", "calculator"):
+            if tool_id in ("tool-academic-search", "academic_search", "arxiv"):
+                res = execute_academic_search(params.get("query", "reinforcement learning robotics"), max_results=4)
+                record_tool_usage("tool-academic-search", success=res.get("success", True), latency_ms=res.get("elapsed_ms", 400))
+                self.send_json(200, res)
+                return
+            elif tool_id in ("tool-calculator", "calculator"):
                 res = execute_calculator(params.get("expression") or params.get("query", "25% of 2400"))
                 record_tool_usage("tool-calculator", success=res["success"], latency_ms=res.get("elapsed_ms", 50))
                 self.send_json(200, res)
                 return
-            elif tool_id in ("tool-web-search", "searchWeb"):
+            elif tool_id in ("tool-web-search", "searchWeb", "tavily"):
                 res = execute_web_search(params.get("query", "AI trends 2026"), max_results=4)
                 record_tool_usage("tool-web-search", success=res["success"], latency_ms=res.get("elapsed_ms", 700))
                 self.send_json(200, res)

@@ -154,7 +154,8 @@ def init_db():
     cursor.execute("SELECT COUNT(*) FROM tool_stats")
     if cursor.fetchone()[0] == 0:
         initial_tools = [
-            ("tool-web-search", "Web Search Engine", "Intelligence", "travel_explore", "active", 184, 184, 0, 820, "2 mins ago", "Autonomous multi-query web indexing, citation retrieval, and real-time domain verification via live search APIs."),
+            ("tool-web-search", "Tavily Web Search", "Intelligence", "travel_explore", "active", 184, 184, 0, 820, "2 mins ago", "Real-time web research for current trends, news, statistics, and industry reports via Tavily Search API & live web."),
+            ("tool-academic-search", "arXiv Academic Search", "Academic", "school", "active", 142, 142, 0, 410, "Just now", "Official arXiv API integration for peer-reviewed academic literature, preprints, AI/ML, and scientific papers."),
             ("tool-calculator", "Safe Calculator & Math Engine", "Compute", "calculate", "active", 110, 110, 0, 120, "Just now", "High-precision safe mathematical solver, formula evaluator, percentages, averages, and numerical analysis."),
             ("tool-fetch-source", "Source Fetcher & Scraper", "Intelligence", "description", "active", 126, 124, 2, 640, "5 mins ago", "Fetches raw HTML web pages, removes boilerplate, and extracts structured readable text passages."),
             ("tool-fact-extractor", "Fact & Numerical Extractor", "Analysis", "analytics", "active", 142, 142, 0, 480, "12 mins ago", "Extracts percentages, financial values, dates, and named policy entities with direct source links."),

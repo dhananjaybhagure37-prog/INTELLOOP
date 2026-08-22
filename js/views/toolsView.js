@@ -1,5 +1,5 @@
 /* ==========================================================================
-   INTELLOOP — TOOL REGISTRY & LIVE SANDBOX VIEW (REAL SQLITE TELEMETRY)
+   INTELLOOP — TOOL REGISTRY & LIVE SANDBOX VIEW (TAVILY + ARXIV INTEGRATION)
    Complete tool catalog with enable/disable switches and interactive sandbox
    ========================================================================== */
 
@@ -21,7 +21,7 @@ export function renderToolsView() {
             <span class="font-label-sm text-xs text-primary font-bold tracking-wider uppercase">Capability Framework</span>
           </div>
           <h1 class="text-2xl font-bold text-on-surface mt-1">Autonomous Tool Registry & Telemetry</h1>
-          <p class="text-xs text-on-surface-variant mt-0.5">Live execution telemetry and persistent counters from SQLite database</p>
+          <p class="text-xs text-on-surface-variant mt-0.5">Real external integrations: Tavily Web Search API, arXiv Academic Search, and Safe AST Calculator</p>
         </div>
 
         <div class="flex items-center gap-2 text-xs font-mono text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20">
@@ -46,15 +46,16 @@ export function renderToolsView() {
                   <span class="material-symbols-outlined text-primary text-[20px]">terminal</span>
                   <h2 class="text-sm font-bold text-on-surface">Interactive Tool Sandbox</h2>
                 </div>
-                <span class="text-[10px] font-mono text-primary px-2 py-0.5 rounded bg-primary/15">Live Backend Sandbox</span>
+                <span class="text-[10px] font-mono text-primary px-2 py-0.5 rounded bg-primary/15">Live Backend REPL</span>
               </div>
 
               <!-- Tool Select -->
               <div class="flex flex-col gap-1.5 text-xs">
                 <label for="sandbox-tool-select" class="text-on-surface-variant font-medium">Select Tool to Test:</label>
                 <select id="sandbox-tool-select" class="form-input text-xs bg-surface-lowest">
+                  <option value="tool-academic-search">Academic Search (arXiv Official API)</option>
+                  <option value="tool-web-search">Web Search (Tavily / Live Web)</option>
                   <option value="tool-calculator">Safe Calculator & Math Engine (Compute)</option>
-                  <option value="tool-web-search">Web Search Engine (Intelligence)</option>
                   <option value="tool-fetch-source">Source Fetcher & Scraper (Intelligence)</option>
                   <option value="tool-data-analyzer">Statistical & Comparative Analyzer (Compute)</option>
                 </select>
@@ -64,7 +65,7 @@ export function renderToolsView() {
               <div class="flex flex-col gap-1.5 text-xs">
                 <label for="sandbox-input-payload" class="text-on-surface-variant font-medium">Input Query / Expression:</label>
                 <textarea id="sandbox-input-payload" rows="3" class="form-input text-xs font-mono resize-none bg-surface-lowest"
-                          placeholder='e.g. 25% of 2400 or {"expression": "2400 * 0.25"}'></textarea>
+                          placeholder='e.g. transformer models medical diagnosis or 25% of 2400'></textarea>
               </div>
 
               <button id="run-sandbox-btn" class="w-full py-2.5 bg-gradient-to-r from-primary to-secondary text-[#002e6a] font-bold text-xs rounded-lg shadow-[0_0_15px_rgba(173,198,255,0.3)] hover:opacity-95 transition-all flex items-center justify-center gap-2">
@@ -105,7 +106,7 @@ function renderToolCardHtml(t) {
             </div>
             <button class="toggle-tool-btn text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold transition-colors ${isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-surface-lowest text-on-surface-variant'}"
                     data-tool-id="${t.id}">
-              ${isActive ? 'ONLINE' : 'OFFLINE'}
+              ${isActive ? 'CONNECTED' : 'OFFLINE'}
             </button>
           </div>
 
@@ -168,7 +169,7 @@ export function bindToolsEvents() {
         const updated = store.toggleToolStatus(toolId);
         if (updated) {
           btn.className = `toggle-tool-btn text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold transition-colors ${updated.status === 'active' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-surface-lowest text-on-surface-variant'}`;
-          btn.innerText = updated.status.toUpperCase();
+          btn.innerText = updated.status === 'active' ? 'CONNECTED' : 'OFFLINE';
           toast.show(`Tool ${updated.name} is now ${updated.status.toUpperCase()}`, 'info');
         }
       };
@@ -188,14 +189,16 @@ export function bindToolsEvents() {
   if (toolSelect) {
     toolSelect.onchange = () => {
       if (!inputPayload) return;
-      if (toolSelect.value === 'tool-calculator' || toolSelect.value === 'calculator') {
+      if (toolSelect.value === 'tool-academic-search' || toolSelect.value === 'academic_search' || toolSelect.value === 'arxiv') {
+        inputPayload.value = 'transformer models medical diagnosis';
+      } else if (toolSelect.value === 'tool-calculator' || toolSelect.value === 'calculator') {
         inputPayload.value = '25% of 2400';
-      } else if (toolSelect.value === 'tool-web-search' || toolSelect.value === 'searchWeb') {
-        inputPayload.value = 'Latest developments in AI in 2026';
+      } else if (toolSelect.value === 'tool-web-search' || toolSelect.value === 'searchWeb' || toolSelect.value === 'tavily') {
+        inputPayload.value = 'latest electric vehicle sales trends India';
       } else if (toolSelect.value === 'tool-fetch-source') {
         inputPayload.value = 'https://pib.gov.in';
       } else {
-        inputPayload.value = '{"expression": "4850000 * 0.386"}';
+        inputPayload.value = '{"query": "test parameters"}';
       }
     };
     toolSelect.dispatchEvent(new Event('change'));
@@ -209,8 +212,10 @@ export function bindToolsEvents() {
 
       if (toolId.includes('calc')) {
         params = { expression: rawVal, query: rawVal };
-      } else if (toolId.includes('search')) {
-        params = { query: rawVal };
+      } else if (toolId.includes('academic') || toolId.includes('arxiv')) {
+        params = { query: rawVal, max_results: 4 };
+      } else if (toolId.includes('search') || toolId.includes('web') || toolId.includes('tavily')) {
+        params = { query: rawVal, max_results: 4 };
       } else if (toolId.includes('fetch')) {
         params = { url: rawVal };
       } else {
