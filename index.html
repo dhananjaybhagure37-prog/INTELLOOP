@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INTELLOOP — AI Intelligence & Agentic Reasoning Platform</title>
+  <meta name="description" content="Intelloop is a next-generation autonomous multi-agent intelligence and reasoning platform. Orchestrate reasoning engines, tool workflows, and verified executive synthesis." />
+
+  <!-- Google Fonts: Hanken Grotesk & Material Symbols -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+
+  <!-- Tailwind CSS Engine -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface": "#0c1324",
+            "surface-dim": "#0c1324",
+            "surface-bright": "#33394c",
+            "surface-container-lowest": "#070d1f",
+            "surface-container-low": "#151b2d",
+            "surface-container": "#191f31",
+            "surface-container-high": "#23293c",
+            "surface-container-highest": "#2e3447",
+            "on-surface": "#dce1fb",
+            "on-surface-variant": "#c2c6d6",
+            "inverse-surface": "#dce1fb",
+            "inverse-on-surface": "#2a3043",
+            "outline": "#8c909f",
+            "outline-variant": "#424754",
+            "surface-tint": "#adc6ff",
+            "primary": "#adc6ff",
+            "on-primary": "#002e6a",
+            "primary-container": "#4d8eff",
+            "on-primary-container": "#00285d",
+            "inverse-primary": "#005ac2",
+            "secondary": "#ddb7ff",
+            "on-secondary": "#490080",
+            "secondary-container": "#6f00be",
+            "on-secondary-container": "#d6a9ff",
+            "tertiary": "#89ceff",
+            "on-tertiary": "#00344d",
+            "tertiary-container": "#009ada",
+            "on-tertiary-container": "#002d43",
+            "error": "#ffb4ab",
+            "on-error": "#690005",
+            "error-container": "#93000a",
+            "on-error-container": "#ffdad6",
+            "primary-fixed": "#d8e2ff",
+            "primary-fixed-dim": "#adc6ff",
+            "on-primary-fixed": "#001a42",
+            "on-primary-fixed-variant": "#004395",
+            "secondary-fixed": "#f0dbff",
+            "secondary-fixed-dim": "#ddb7ff",
+            "on-secondary-fixed": "#2c0051",
+            "on-secondary-fixed-variant": "#6900b3",
+            "tertiary-fixed": "#c9e6ff",
+            "tertiary-fixed-dim": "#89ceff",
+            "on-tertiary-fixed": "#001e2f",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "background": "#0c1324",
+            "on-background": "#dce1fb",
+            "surface-variant": "#2e3447"
+          },
+          fontFamily: {
+            "display-lg": ["Hanken Grotesk", "sans-serif"],
+            "headline-lg": ["Hanken Grotesk", "sans-serif"],
+            "headline-md": ["Hanken Grotesk", "sans-serif"],
+            "body-lg": ["Hanken Grotesk", "sans-serif"],
+            "body-md": ["Hanken Grotesk", "sans-serif"],
+            "label-md": ["Hanken Grotesk", "sans-serif"],
+            "label-sm": ["Hanken Grotesk", "sans-serif"],
+            "mono": ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Design System Tokens & Custom App Styles -->
+  <link rel="stylesheet" href="./css/design-tokens.css" />
+  <link rel="stylesheet" href="./css/app.css" />
+</head>
+<body class="bg-background text-on-surface antialiased overflow-x-hidden">
+  <!-- Main Application Mounting Node -->
+  <div id="app"></div>
+
+  <!-- Boot App Orchestrator Module -->
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,336 @@
+"""
+INTELLOOP AI RESEARCH PLATFORM — SQLITE DATABASE LAYER
+Manages persistent storage of investigations, ReAct steps, sources, claims, conflicts, logs, and docs.
+"""
+
+import sqlite3
+import json
+import os
+import time
+
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "intelloop.db")
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # 1. Investigations Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS investigations (
+        id TEXT PRIMARY KEY,
+        question TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PLANNING',
+        domain TEXT DEFAULT 'General Intelligence',
+        depth TEXT DEFAULT 'Standard',
+        confidence_score REAL DEFAULT 0.0,
+        confidence_level TEXT DEFAULT 'MEDIUM',
+        final_report TEXT,
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        execution_time_ms INTEGER DEFAULT 0
+    )
+    """)
+
+    # 2. Steps Table (ReAct loop events)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS steps (
+        id TEXT PRIMARY KEY,
+        investigation_id TEXT NOT NULL,
+        step_index INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        tool_name TEXT,
+        tool_input TEXT,
+        observation TEXT,
+        graph_node TEXT DEFAULT 'MISSION',
+        timestamp TEXT NOT NULL,
+        FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE CASCADE
+    )
+    """)
+
+    # 3. Sources Table (Real web sources retrieved)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sources (
+        id TEXT PRIMARY KEY,
+        investigation_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        publisher TEXT,
+        publish_date TEXT,
+        authority TEXT DEFAULT 'Medium',
+        relevance REAL DEFAULT 0.85,
+        source_type TEXT DEFAULT 'Web Article',
+        snippet TEXT,
+        FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE CASCADE
+    )
+    """)
+
+    # 4. Claims & Evidence Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS claims (
+        id TEXT PRIMARY KEY,
+        investigation_id TEXT NOT NULL,
+        finding_text TEXT NOT NULL,
+        status TEXT DEFAULT 'VERIFIED',
+        confidence TEXT DEFAULT 'HIGH',
+        evidence_strength TEXT DEFAULT 'Strong (Multi-Source)',
+        supporting_source_ids TEXT DEFAULT '[]',
+        raw_passages TEXT DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE CASCADE
+    )
+    """)
+
+    # 5. Conflicting Evidence Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS conflicts (
+        id TEXT PRIMARY KEY,
+        investigation_id TEXT NOT NULL,
+        topic TEXT NOT NULL,
+        source_a_name TEXT NOT NULL,
+        source_a_val TEXT NOT NULL,
+        source_b_name TEXT NOT NULL,
+        source_b_val TEXT NOT NULL,
+        explanation TEXT,
+        preferred_source TEXT,
+        FOREIGN KEY (investigation_id) REFERENCES investigations(id) ON DELETE CASCADE
+    )
+    """)
+
+    # 6. Activity Logs Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS activity_logs (
+        id TEXT PRIMARY KEY,
+        investigation_id TEXT,
+        timestamp TEXT NOT NULL,
+        agent_name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        tool_name TEXT,
+        summary TEXT NOT NULL,
+        duration_ms INTEGER DEFAULT 0
+    )
+    """)
+
+    # 7. Knowledge Docs Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS knowledge_docs (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        category TEXT DEFAULT 'General',
+        size TEXT DEFAULT '1.0 MB',
+        pages INTEGER DEFAULT 1,
+        chunks INTEGER DEFAULT 10,
+        uploaded_at TEXT NOT NULL,
+        tags TEXT DEFAULT '[]',
+        summary TEXT,
+        extracted_claims TEXT DEFAULT '[]'
+    )
+    """)
+
+    # 8. Settings Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
+# --- Database Operations ---
+
+def save_investigation(inv):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT OR REPLACE INTO investigations (
+        id, question, status, domain, depth, confidence_score, confidence_level,
+        final_report, created_at, completed_at, execution_time_ms
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        inv.get("id"), inv.get("question"), inv.get("status", "PLANNING"),
+        inv.get("domain", "General Intelligence"), inv.get("depth", "Standard"),
+        inv.get("confidence_score", 0.0), inv.get("confidence_level", "MEDIUM"),
+        inv.get("final_report"), inv.get("created_at", time.strftime("%Y-%m-%dT%H:%M:%SZ")),
+        inv.get("completed_at"), inv.get("execution_time_ms", 0)
+    ))
+    conn.commit()
+    conn.close()
+
+def get_investigation(inv_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM investigations WHERE id = ?", (inv_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+
+    inv = dict(row)
+    
+    # Get steps
+    cursor.execute("SELECT * FROM steps WHERE investigation_id = ? ORDER BY step_index ASC", (inv_id,))
+    inv["steps"] = [dict(r) for r in cursor.fetchall()]
+
+    # Get sources
+    cursor.execute("SELECT * FROM sources WHERE investigation_id = ?", (inv_id,))
+    inv["sources"] = [dict(r) for r in cursor.fetchall()]
+
+    # Get claims
+    cursor.execute("SELECT * FROM claims WHERE investigation_id = ?", (inv_id,))
+    inv["claims"] = []
+    for cr in cursor.fetchall():
+        cd = dict(cr)
+        try:
+            cd["supporting_source_ids"] = json.loads(cd.get("supporting_source_ids", "[]"))
+            cd["raw_passages"] = json.loads(cd.get("raw_passages", "[]"))
+        except:
+            cd["supporting_source_ids"] = []
+            cd["raw_passages"] = []
+        inv["claims"].append(cd)
+
+    # Get conflicts
+    cursor.execute("SELECT * FROM conflicts WHERE investigation_id = ?", (inv_id,))
+    inv["conflicts"] = [dict(r) for r in cursor.fetchall()]
+
+    conn.close()
+    return inv
+
+def list_investigations(limit=50):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM investigations ORDER BY created_at DESC LIMIT ?", (limit,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def delete_investigation(inv_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM investigations WHERE id = ?", (inv_id,))
+    cursor.execute("DELETE FROM steps WHERE investigation_id = ?", (inv_id,))
+    cursor.execute("DELETE FROM sources WHERE investigation_id = ?", (inv_id,))
+    cursor.execute("DELETE FROM claims WHERE investigation_id = ?", (inv_id,))
+    cursor.execute("DELETE FROM conflicts WHERE investigation_id = ?", (inv_id,))
+    conn.commit()
+    conn.close()
+
+def add_step(step):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO steps (id, investigation_id, step_index, type, title, summary, tool_name, tool_input, observation, graph_node, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        step.get("id", f"step-{int(time.time()*1000)}"),
+        step["investigation_id"],
+        step.get("step_index", 0),
+        step["type"],
+        step["title"],
+        step["summary"],
+        step.get("tool_name"),
+        json.dumps(step.get("tool_input")) if isinstance(step.get("tool_input"), (dict, list)) else step.get("tool_input"),
+        step.get("observation"),
+        step.get("graph_node", "MISSION"),
+        step.get("timestamp", time.strftime("%H:%M:%S"))
+    ))
+    conn.commit()
+    conn.close()
+
+def add_source(src):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT OR REPLACE INTO sources (id, investigation_id, url, title, publisher, publish_date, authority, relevance, source_type, snippet)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        src.get("id", f"src-{int(time.time()*1000)}"),
+        src["investigation_id"],
+        src["url"],
+        src["title"],
+        src.get("publisher", "Web"),
+        src.get("publish_date", "Recent"),
+        src.get("authority", "Medium"),
+        src.get("relevance", 0.85),
+        src.get("source_type", "Web Article"),
+        src.get("snippet", "")
+    ))
+    conn.commit()
+    conn.close()
+
+def add_claim(cl):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO claims (id, investigation_id, finding_text, status, confidence, evidence_strength, supporting_source_ids, raw_passages, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        cl.get("id", f"claim-{int(time.time()*1000)}"),
+        cl["investigation_id"],
+        cl["finding_text"],
+        cl.get("status", "VERIFIED"),
+        cl.get("confidence", "HIGH"),
+        cl.get("evidence_strength", "Strong (Multi-Source)"),
+        json.dumps(cl.get("supporting_source_ids", [])),
+        json.dumps(cl.get("raw_passages", [])),
+        cl.get("created_at", time.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    ))
+    conn.commit()
+    conn.close()
+
+def add_conflict(conf):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO conflicts (id, investigation_id, topic, source_a_name, source_a_val, source_b_name, source_b_val, explanation, preferred_source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        conf.get("id", f"conf-{int(time.time()*1000)}"),
+        conf["investigation_id"],
+        conf["topic"],
+        conf["source_a_name"],
+        conf["source_a_val"],
+        conf["source_b_name"],
+        conf["source_b_val"],
+        conf.get("explanation", ""),
+        conf.get("preferred_source", "")
+    ))
+    conn.commit()
+    conn.close()
+
+def add_log(log):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO activity_logs (id, investigation_id, timestamp, agent_name, type, tool_name, summary, duration_ms)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        log.get("id", f"log-{int(time.time()*1000)}"),
+        log.get("investigation_id", "SYSTEM"),
+        log.get("timestamp", time.strftime("%H:%M:%S")),
+        log.get("agent_name", "Research Agent"),
+        log.get("type", "Event"),
+        log.get("tool_name"),
+        log.get("summary", ""),
+        log.get("duration_ms", 0)
+    ))
+    conn.commit()
+    conn.close()
+
+def list_logs(limit=100):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM activity_logs ORDER BY id DESC LIMIT ?", (limit,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+# Initialize DB on load
+init_db()

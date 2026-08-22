@@ -1,0 +1,82 @@
+/* ==========================================================================
+   INTELLOOP AI INTELLIGENCE PLATFORM — DESIGN TOKENS
+   Deep Space Glassmorphic Design System (Stitch Specification)
+   ========================================================================== */
+
+:root {
+  /* Surface Layers */
+  --surface-void: #020617;
+  --surface-lowest: #070d1f;
+  --surface-low: #151b2d;
+  --surface: #0c1324;
+  --surface-container: #191f31;
+  --surface-high: #23293c;
+  --surface-highest: #2e3447;
+  --surface-bright: #33394c;
+
+  /* Typography & Foreground */
+  --on-surface: #dce1fb;
+  --on-surface-variant: #c2c6d6;
+  --on-surface-muted: #8c909f;
+  --outline: #8c909f;
+  --outline-variant: #424754;
+
+  /* Primary Palette (Cyan-Blue Luminescence) */
+  --primary: #adc6ff;
+  --on-primary: #002e6a;
+  --primary-container: #4d8eff;
+  --on-primary-container: #00285d;
+  --primary-glow: rgba(173, 198, 255, 0.25);
+  --primary-glow-strong: rgba(173, 198, 255, 0.45);
+
+  /* Secondary Palette (Cyber Purple / Violet) */
+  --secondary: #ddb7ff;
+  --on-secondary: #490080;
+  --secondary-container: #6f00be;
+  --on-secondary-container: #d6a9ff;
+  --secondary-glow: rgba(221, 183, 255, 0.25);
+
+  /* Tertiary Palette (Electric Sky / Telemetry Cyan) */
+  --tertiary: #89ceff;
+  --on-tertiary: #00344d;
+  --tertiary-container: #009ada;
+  --on-tertiary-container: #002d43;
+
+  /* Status Colors */
+  --success: #6ee7b7;
+  --success-container: rgba(110, 231, 183, 0.15);
+  --warning: #fcd34d;
+  --warning-container: rgba(252, 211, 77, 0.15);
+  --error: #ffb4ab;
+  --on-error: #690005;
+  --error-container: #93000a;
+
+  /* Glassmorphism & Borders */
+  --glass-bg: rgba(25, 31, 49, 0.85);
+  --glass-bg-low: rgba(21, 27, 45, 0.88);
+  --glass-bg-high: rgba(35, 41, 60, 0.9);
+  --glass-border: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 100%);
+  --glass-border-subtle: rgba(255, 255, 255, 0.07);
+  --glass-border-active: rgba(173, 198, 255, 0.4);
+
+  /* Elevation Shadows & Blooms */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.55);
+  --bloom-primary: 0 0 24px rgba(77, 142, 255, 0.25);
+  --bloom-secondary: 0 0 24px rgba(111, 0, 190, 0.25);
+
+  /* Dimensions & Spacing */
+  --sidebar-width: 280px;
+  --header-height: 64px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-full: 9999px;
+
+  /* Animation Timings */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
