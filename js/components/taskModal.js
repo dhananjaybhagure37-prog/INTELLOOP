@@ -171,7 +171,7 @@ export function bindTaskModalEvents() {
       const submitBtn = document.getElementById('run-agent-btn');
       if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.innerHTML = \`<span class="material-symbols-outlined text-[16px] animate-spin">autorenew</span> Starting ReAct Agent...\`;
+        submitBtn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">autorenew</span> Starting ReAct Agent...`;
       }
 
       try {
@@ -190,17 +190,17 @@ export function bindTaskModalEvents() {
         });
 
         closeModal();
-        toast.show(\`Mission ${res.investigation_id} dispatched! Launching live execution stream...\`, 'success');
+        toast.show(`Mission ${res.investigation_id} dispatched! Launching live execution stream...`, 'success');
 
         // Navigate to execution view and start autonomous runner
-        window.location.hash = \`#execution?id=\${res.investigation_id}\`;
+        window.location.hash = `#execution?id=${res.investigation_id}`;
       } catch (err) {
         console.error('Launch error:', err);
-        toast.show(\`Launch error: \${err.message}\`, 'error');
+        toast.show(`Launch error: ${err.message}`, 'error');
       } finally {
         if (submitBtn) {
           submitBtn.disabled = false;
-          submitBtn.innerHTML = \`<span class="material-symbols-outlined text-[16px]">rocket_launch</span> Run Agent\`;
+          submitBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">rocket_launch</span> Run Agent`;
         }
       }
     };

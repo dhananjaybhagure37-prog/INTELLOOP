@@ -340,9 +340,12 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+class ReusableTCPServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+
 def run_server():
     init_db()
-    with socketserver.ThreadingTCPServer(("", PORT), IntelloopApiHandler) as httpd:
+    with ReusableTCPServer(("", PORT), IntelloopApiHandler) as httpd:
         print(f"============================================================")
         print(f" INTELLOOP AI RESEARCH PLATFORM SERVER STARTED ON PORT {PORT}")
         print(f" URL: http://localhost:{PORT}")
