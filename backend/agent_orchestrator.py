@@ -3,6 +3,8 @@ import json
 import threading
 import queue
 import os
+import random
+import hashlib
 
 from typing import TypedDict, Annotated, Sequence, List
 import operator
@@ -22,6 +24,10 @@ MAX_TOOL_CALLS_PER_INVESTIGATION = 10
 # Global event streams for SSE
 ACTIVE_STREAMS = {}  # { investigation_id: [queue.Queue(), ...] }
 STREAM_LOCK = threading.Lock()
+GEMINI_API_LOCK = threading.Lock()
+
+class QuotaExhaustedError(Exception):
+    pass
 
 def register_stream(inv_id):
     q = queue.Queue()
@@ -60,6 +66,8 @@ class ReActResearchOrchestrator:
         self.step_index = 0
         self.start_time = time.time()
         self.tools = get_all_langgraph_tools()
+        self.llm_call_count = 0
+        self.visited_states = set()
 
     def record_step(self, step_type, title, summary, graph_node='MISSION', tool_name=None, tool_input=None, observation=None, agent_name='ReAct Agent'):
         self.step_index += 1
@@ -95,7 +103,7 @@ class ReActResearchOrchestrator:
         api_key = os.environ.get('GEMINI_API_KEY', '')
         if not api_key:
              raise ValueError('GEMINI_API_KEY is not set in the environment.')
-        llm = ChatGoogleGenerativeAI(model='gemini-3.6-flash', temperature=0.1, google_api_key=api_key)
+        llm = ChatGoogleGenerativeAI(model='gemini-3.6-flash', temperature=0.1, google_api_key=api_key, max_retries=0)
         llm_with_tools = llm.bind_tools(self.tools)
         
         self.record_step(
@@ -105,8 +113,84 @@ class ReActResearchOrchestrator:
             graph_node='PLAN'
         )
         
-        response = llm_with_tools.invoke(messages)
-        return {'messages': [response]}
+        def _invoke_with_retry(msg_list):
+            # Compute hash of the exact message sequence
+            msg_contents = [getattr(m, 'content', str(m)) for m in msg_list]
+            for m in msg_list:
+                if hasattr(m, 'tool_calls') and m.tool_calls:
+                    msg_contents.append(str(m.tool_calls))
+                if hasattr(m, 'tool_call_id') and m.tool_call_id:
+                    msg_contents.append(str(m.tool_call_id))
+            
+            state_hash = hashlib.md5(json.dumps(msg_contents).encode()).hexdigest()
+            if state_hash in self.visited_states:
+                self.record_step(step_type='PLAN', title='State Deadlock Prevented', summary='Exact duplicate state detected. Bypassing Gemini API to save quota.', graph_node='PLAN')
+                return AIMessage(content="Error: Exact duplicate state detected. Tool skipped to prevent deadlock.")
+            self.visited_states.add(state_hash)
+            
+            max_retries = 3
+            retry_delay = 35 # seconds
+            for attempt in range(max_retries):
+                try:
+                    with GEMINI_API_LOCK:
+                        self.llm_call_count += 1
+                        return llm_with_tools.invoke(msg_list)
+                except Exception as e:
+                    error_msg = str(e)
+                    if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg:
+                        if attempt < max_retries - 1:
+                            import re
+                            delay = retry_delay
+                            m = re.search(r'retry in ([\d\.]+)s', error_msg)
+                            if m:
+                                delay = int(float(m.group(1))) + 2
+                            # Add Jitter
+                            delay += random.uniform(1.0, 5.0)
+                            print(f"Rate limit hit in _call_model. Retrying in {delay:.1f}s... (Attempt {attempt+1}/{max_retries})")
+                            self.record_step(
+                                step_type='ERROR',
+                                title='Rate Limit Exceeded',
+                                summary=f'Gemini API quota exceeded. Pausing for {delay:.1f} seconds before retry...',
+                                graph_node='PLAN'
+                            )
+                            time.sleep(delay)
+                            retry_delay += 10 # Increase delay for next retry
+                        else:
+                            self.record_step(
+                                step_type='ERROR',
+                                title='Quota Exhausted',
+                                summary='Project Gemini API daily quota exhausted.',
+                                graph_node='PLAN'
+                            )
+                            raise QuotaExhaustedError("Project Gemini quota is exhausted. Mission aborted.")
+                    else:
+                        raise e
+
+        response = _invoke_with_retry(messages)
+        new_messages = [response]
+        
+        if not hasattr(response, 'tool_calls') or not response.tool_calls:
+            if state.get('tool_call_count', 0) == 0:
+                self.record_step(step_type='PLAN', title='Replanning', summary='Agent attempted to answer without research. Forcing tool usage...', graph_node='PLAN')
+                force_msg = HumanMessage(content="You did not call any tools. You MUST perform research first using the available tools before providing a final answer.")
+                new_messages.append(force_msg)
+                response2 = _invoke_with_retry(messages + new_messages)
+                new_messages.append(response2)
+                
+        elif hasattr(response, 'tool_calls') and response.tool_calls and len(messages) >= 2:
+            last_ai_msg = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
+            if last_ai_msg and hasattr(last_ai_msg, 'tool_calls') and last_ai_msg.tool_calls:
+                if [tc['name'] for tc in response.tool_calls] == [tc['name'] for tc in last_ai_msg.tool_calls] and \
+                   [tc.get('args', {}) for tc in response.tool_calls] == [tc.get('args', {}) for tc in last_ai_msg.tool_calls]:
+                    self.record_step(step_type='PLAN', title='Loop Detected', summary='Agent repeated the same tool call. Appending mock failure to bypass Gemini API.', graph_node='PLAN')
+                    # Instead of injecting a HumanMessage and re-invoking the LLM right here (wasting quota),
+                    # we append a mock ToolMessage so the graph handles the failure dynamically on the NEXT tick.
+                    for tool_call in response.tool_calls:
+                        new_messages.append(ToolMessage(content="Error: You already tried this exact tool call and it failed. Change your strategy or parameters.", tool_call_id=tool_call['id']))
+                    # We remove the tool calls from the AIMessage so we don't accidentally execute it in _execute_tools again
+                    response.tool_calls = []
+
+        return {'messages': new_messages}
 
     def _execute_tools(self, state: AgentState):
         messages = state['messages']
@@ -213,9 +297,16 @@ class ReActResearchOrchestrator:
             
             system_prompt = f"""You are an autonomous AI research agent.
 Your objective: {self.question}
-You must answer the objective thoroughly by calling tools. 
-If a tool fails, YOU MUST autonomous replan and use a different tool or strategy. Do not give up easily.
-When you have sufficient information, write a comprehensive markdown report. Do NOT output raw tool output in the final report. Synthesize it!"""
+
+CRITICAL INSTRUCTIONS:
+1. You MUST actually perform internet research using the tools provided (e.g. web_search, academic_search). Do not answer from your internal knowledge.
+2. If a tool fails, autonomously replan and use a different tool or strategy. Do not give up easily.
+3. For every source used, preserve and return the ACTUAL source URL in your final report.
+4. If two sources disagree, detect the conflict, compare reliability, and explicitly explain the resolution. If uncertainty remains, report it.
+5. Do NOT fabricate facts or URLs. If evidence is insufficient, state it explicitly.
+6. The final report MUST contain a section '## Sources & Research Papers' with clickable markdown links (e.g., [Source Title](URL)) to every web source and academic paper you retrieved.
+
+When you have sufficient information, synthesize it into a comprehensive markdown report. Do NOT output raw tool output in the final report."""
 
             inputs = {
                 'messages': [
@@ -240,15 +331,28 @@ When you have sufficient information, write a comprehensive markdown report. Do 
             
             self.finalize_investigation(final_report)
 
-        except Exception as e:
-            print(f'Orchestrator Error: {e}')
-            import traceback
-            traceback.print_exc()
+        except QuotaExhaustedError as e:
+            elapsed_total_ms = int((time.time() - self.start_time) * 1000)
             save_investigation({
                 'id': self.inv_id,
                 'question': self.question,
                 'status': 'FAILED',
-                'completed_at': time.strftime('%Y-%m-%dT%H:%M:%SZ')
+                'completed_at': time.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'execution_time_ms': elapsed_total_ms
+            })
+            broadcast_event(self.inv_id, 'error', {'error': str(e)})
+            
+        except Exception as e:
+            print(f'Orchestrator Error: {e}')
+            import traceback
+            traceback.print_exc()
+            elapsed_total_ms = int((time.time() - self.start_time) * 1000)
+            save_investigation({
+                'id': self.inv_id,
+                'question': self.question,
+                'status': 'FAILED',
+                'completed_at': time.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'execution_time_ms': elapsed_total_ms
             })
             self.record_step(
                 step_type='ERROR',
@@ -277,7 +381,7 @@ When you have sufficient information, write a comprehensive markdown report. Do 
         self.record_step(
             step_type='SYNTHESIZE',
             title='Final Intelligence Report Compiled',
-            summary=f'Investigation completed successfully via LangGraph in {(elapsed_total_ms/1000):.1f}s.',
+            summary=f'Investigation completed successfully in {(elapsed_total_ms/1000):.1f}s using {self.llm_call_count} Gemini requests.',
             graph_node='VERIFY'
         )
         broadcast_event(self.inv_id, 'complete', {

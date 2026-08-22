@@ -3,7 +3,7 @@
    ========================================================================== */
 
 import { store } from '../state/store.js';
-import { agentEngine } from '../engine/agentEngine.js';
+import { ApiClient } from '../api/client.js';
 import { PROMPT_SCENARIOS } from '../engine/promptScenarios.js';
 import { toast } from './toast.js';
 
@@ -155,7 +155,7 @@ export function bindTaskModalEvents() {
 
   // Form Submit
   if (form) {
-    form.onsubmit = (e) => {
+    form.onsubmit = async (e) => {
       e.preventDefault();
       const title = promptInput.value.trim();
       if (!title) {
@@ -167,21 +167,42 @@ export function bindTaskModalEvents() {
       const priority = document.getElementById('task-priority-select')?.value || 'Medium';
       const agentId = document.getElementById('task-agent-select')?.value || 'agent-sentinel';
       const agent = store.getState().agents.find(a => a.id === agentId);
+      
+      const submitBtn = document.getElementById('run-agent-btn');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = \`<span class="material-symbols-outlined text-[16px] animate-spin">autorenew</span> Starting ReAct Agent...\`;
+      }
 
-      const mission = store.createMission({
-        title,
-        domain,
-        priority,
-        agentId,
-        agentName: agent ? agent.name : 'Sentinel-Prime'
-      });
+      try {
+        const isChaosMode = document.getElementById('chaos-mode-toggle')?.checked || false;
+        toast.show('Initializing ReAct Research Orchestrator...', 'info');
+        
+        const res = await ApiClient.createInvestigation(title, 'Standard', domain, isChaosMode);
 
-      closeModal();
-      toast.show(`Mission ${mission.id} dispatched! Launching live execution stream...`, 'success');
+        const mission = store.createMission({
+          id: res.investigation_id,
+          title,
+          domain,
+          priority,
+          agentId,
+          agentName: agent ? agent.name : 'Sentinel-Prime'
+        });
 
-      // Navigate to execution view and start autonomous runner
-      window.location.hash = `#execution?id=${mission.id}`;
-      agentEngine.runMission(mission.id);
+        closeModal();
+        toast.show(\`Mission ${res.investigation_id} dispatched! Launching live execution stream...\`, 'success');
+
+        // Navigate to execution view and start autonomous runner
+        window.location.hash = \`#execution?id=\${res.investigation_id}\`;
+      } catch (err) {
+        console.error('Launch error:', err);
+        toast.show(\`Launch error: \${err.message}\`, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = \`<span class="material-symbols-outlined text-[16px]">rocket_launch</span> Run Agent\`;
+        }
+      }
     };
   }
 }

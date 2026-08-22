@@ -48,7 +48,7 @@ class BaselineAgent:
         
     def run(self):
         api_key = os.environ.get('GEMINI_API_KEY', '')
-        llm = ChatGoogleGenerativeAI(model='gemini-3.6-flash', temperature=0.1, google_api_key=api_key)
+        llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', temperature=0.1, google_api_key=api_key)
         try:
             res = llm.invoke([
                 SystemMessage(content="You are a helpful assistant. Answer the user's question directly."),
@@ -68,7 +68,7 @@ class BaselineAgent:
 class EvaluationRunner:
     def __init__(self):
         api_key = os.environ.get('GEMINI_API_KEY', '')
-        self.llm_evaluator = ChatGoogleGenerativeAI(model='gemini-3.6-flash', temperature=0.0, google_api_key=api_key)
+        self.llm_evaluator = ChatGoogleGenerativeAI(model='gemini-1.5-flash', temperature=0.0, google_api_key=api_key)
 
     def evaluate_report(self, scenario_type: str, question: str, report: str) -> Dict[str, Any]:
         prompt = f"""
@@ -209,11 +209,14 @@ def run_all_evaluations():
     for scenario in SCENARIOS:
         if scenario == "Repeated_Run":
             continue
+        time.sleep(5)  # Add sleep to prevent hitting rate limits
         eval_id = runner.run_scenario(scenario, baseline=False)
         results.append(eval_id)
         
     # 3. Repeated Runs
+    time.sleep(5)
     eval_id_r1 = runner.run_scenario("Repeated_Run", baseline=False)
+    time.sleep(5)
     eval_id_r2 = runner.run_scenario("Repeated_Run", baseline=False)
     results.extend([eval_id_r1, eval_id_r2])
     
