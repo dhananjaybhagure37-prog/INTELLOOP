@@ -8,6 +8,7 @@ import { ApiClient } from '../api/client.js';
 import { renderReasoningGraph } from '../components/reasoningGraph.js';
 import { formatStatusBadge, formatDuration } from '../utils/formatters.js';
 import { toast } from '../components/toast.js';
+import { initVoiceInput, stopActiveVoiceRecognition } from '../utils/voiceInput.js';
 
 export function renderDashboardView() {
   const state = store.getState();
@@ -367,20 +368,48 @@ export function bindDashboardEvents() {
     };
   }
 
-  if (voiceBtn) {
-    voiceBtn.onclick = () => {
-      toast.show('Transcribing speech input...', 'info');
-      setTimeout(() => {
-        if (promptInput) {
-          promptInput.value = 'Investigate the current electric vehicle market in India and identify the major trends, government policies, growth factors and challenges.';
-          toast.show('Voice input transcribed successfully!', 'success');
-        }
-      }, 1000);
+  if (voiceBtn && promptInput) {
+    initVoiceInput({ buttonEl: voiceBtn, inputEl: promptInput, lang: 'en-IN' });
+  }
+
+  const chaosToggle = document.getElementById('chaos-mode-toggle');
+  if (chaosToggle) {
+    const toggleBg = chaosToggle.parentElement?.querySelector('.block');
+    const toggleDot = chaosToggle.parentElement?.querySelector('.dot');
+    const toggleText = chaosToggle.closest('label')?.querySelector('span');
+
+    const updateChaosVisuals = (isChecked) => {
+      if (isChecked) {
+        toggleBg?.classList.remove('bg-surface-container-high', 'border-white/10');
+        toggleBg?.classList.add('bg-rose-500/25', 'border-rose-500/50');
+        toggleDot?.classList.remove('bg-gray-400', 'translate-x-0');
+        toggleDot?.classList.add('bg-rose-400', 'translate-x-3');
+        toggleText?.classList.remove('text-gray-400');
+        toggleText?.classList.add('text-rose-400', 'font-bold');
+      } else {
+        toggleBg?.classList.add('bg-surface-container-high', 'border-white/10');
+        toggleBg?.classList.remove('bg-rose-500/25', 'border-rose-500/50');
+        toggleDot?.classList.add('bg-gray-400', 'translate-x-0');
+        toggleDot?.classList.remove('bg-rose-400', 'translate-x-3');
+        toggleText?.classList.add('text-gray-400');
+        toggleText?.classList.remove('text-rose-400', 'font-bold');
+      }
+    };
+
+    chaosToggle.onchange = () => {
+      const isChecked = chaosToggle.checked;
+      updateChaosVisuals(isChecked);
+      if (isChecked) {
+        toast.show('Chaos Mode ENABLED: Controlled failure injection active for resilience testing.', 'warning');
+      } else {
+        toast.show('Chaos Mode DISABLED: Standard research execution mode.', 'info');
+      }
     };
   }
 
   if (startBtn) {
     startBtn.onclick = async () => {
+      stopActiveVoiceRecognition();
       const question = promptInput ? promptInput.value.trim() : '';
       if (!question) {
         toast.show('Please enter an investigation objective.', 'warning');

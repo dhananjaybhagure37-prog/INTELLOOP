@@ -206,8 +206,8 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             inv_id = f"NX-{int(time.time()*1000)%10000:04d}-{''.join([chr(65 + int(c)) for c in str(int(time.time()))[-3:]])}"
             depth = data.get("depth", "Standard")
             domain = data.get("domain", "General Intelligence")
-            chaos_mode = data.get("chaos_mode", False)
-            demo_failure = data.get("demo_failure", False) or os.environ.get("OBSERVABILITY_DEMO_FAILURE", "").lower() == "true"
+            chaos_mode = bool(data.get("chaos_mode", False) or data.get("chaosMode", False))
+            demo_failure = bool(data.get("demo_failure", False) or chaos_mode or os.environ.get("OBSERVABILITY_DEMO_FAILURE", "").lower() == "true")
 
             print(f"[SERVER] POST /api/investigations: Received mission request id={inv_id}, domain='{domain}', depth='{depth}', chaos={chaos_mode}, demo_failure={demo_failure}")
             print(f"[SERVER] Prompt: \"{question[:100]}...\"")
