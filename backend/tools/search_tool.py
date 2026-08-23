@@ -101,83 +101,87 @@ def search_tavily(query, max_results=6, api_key=None):
         return None
 
 def search_duckduckgo_and_wiki(query, max_results=6):
-    """Fallback live web search across DuckDuckGo and Wikipedia."""
+    """Fallback live web search across DuckDuckGo HTML and Wikipedia API."""
     start_time = time.time()
     results = []
+    seen_urls = set()
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5"
     }
 
-    # 1. DuckDuckGo Instant Answer API
+    # 1. DuckDuckGo HTML Live Search
     try:
-        ia_url = f"https://api.duckduckgo.com/?q={urllib.parse.quote(query)}&format=json&no_html=1&skip_disambig=1"
-        req = urllib.request.Request(ia_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=4) as resp:
-            data = json.loads(resp.read().decode('utf-8', errors='ignore'))
-            if data.get("Abstract") and data.get("AbstractURL"):
-                results.append({
-                    "title": data.get("Heading", query),
-                    "url": data.get("AbstractURL"),
-                    "snippet": data.get("Abstract"),
-                    "publisher": data.get("AbstractSource", "DuckDuckGo Knowledge"),
-                    "publish_date": "Recent / Verified",
-                    "authority": evaluate_authority(data.get("AbstractURL")),
-                    "relevance": 0.96,
-                    "source_type": "Web Knowledge Base"
-                })
-            for topic in data.get("RelatedTopics", [])[:3]:
-                if isinstance(topic, dict) and topic.get("FirstURL") and topic.get("Text"):
-                    results.append({
-                        "title": topic.get("Text")[:60] + "...",
-                        "url": topic.get("FirstURL"),
-                        "snippet": topic.get("Text"),
-                        "publisher": "DuckDuckGo Reference",
-                        "publish_date": "Recent",
-                        "authority": evaluate_authority(topic.get("FirstURL")),
-                        "relevance": calculate_relevance(query, topic.get("Text"), ""),
-                        "source_type": "Web Knowledge Base"
-                    })
-    except Exception as e:
-        print(f"DuckDuckGo API notice: {e}")
+        html_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+        req = urllib.request.Request(html_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            html = resp.read().decode('utf-8', errors='ignore')
+            
+            blocks = re.split(r'<div[^>]*class="[^"]*result[^"]*"', html)
+            if len(blocks) <= 1:
+                blocks = re.split(r'<tr[^>]*>', html)
 
-    # 2. DuckDuckGo HTML Lite search
-    if len(results) < max_results:
-        try:
-            html_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
-            req = urllib.request.Request(html_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                html = resp.read().decode('utf-8', errors='ignore')
-                blocks = html.split('<div class="result results_links')
-                for b in blocks[1:max_results+2]:
-                    u_match = re.search(r'<a class="result__url"[^>]*href="([^"]+)"', b)
-                    t_match = re.search(r'<a class="result__snippet"[^>]*>(.*?)</a>', b, re.DOTALL)
-                    h_match = re.search(r'<a class="result__title"[^>]*>(.*?)</a>', b, re.DOTALL)
+            for block in blocks:
+                url_match = re.search(r'href="([^"]*uddg=[^"]*)"', block)
+                if not url_match:
+                    continue
+                
+                raw_url = url_match.group(1)
+                if 'uddg=' in raw_url:
+                    try:
+                        actual_url = urllib.parse.unquote(raw_url.split('uddg=')[1].split('&')[0])
+                    except Exception:
+                        actual_url = raw_url
+                else:
+                    actual_url = raw_url
+
+                if not actual_url.startswith('http') or 'duckduckgo.com/y.js' in actual_url or 'bing.com/aclick' in actual_url:
+                    continue
+
+                if actual_url in seen_urls:
+                    continue
+                seen_urls.add(actual_url)
+
+                title_match = re.search(r'<a[^>]*class="[^"]*result__title[^"]*"[^>]*>(.*?)</a>', block, re.DOTALL)
+                if not title_match:
+                    title_match = re.search(r'<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>', block, re.DOTALL)
+                if not title_match:
+                    title_match = re.search(r'<a[^>]*href="[^"]*uddg=[^"]*"[^>]*>(.*?)</a>', block, re.DOTALL)
+
+                title = re.sub(r'<[^>]+>', '', title_match.group(1)).strip() if title_match else ""
+                
+                snippet_match = re.search(r'<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>', block, re.DOTALL)
+                if not snippet_match:
+                    snippet_match = re.search(r'<td[^>]*class="[^"]*result-snippet[^"]*"[^>]*>(.*?)</td>', block, re.DOTALL)
                     
-                    if u_match and t_match:
-                        raw_url = u_match.group(1)
-                        actual_url = urllib.parse.unquote(raw_url.split("uddg=")[1].split("&")[0]) if "uddg=" in raw_url else raw_url
-                        clean_snippet = re.sub(r'<[^>]+>', '', t_match.group(1)).strip()
-                        clean_title = re.sub(r'<[^>]+>', '', h_match.group(1)).strip() if h_match else clean_snippet[:50]
-                        publisher = urllib.parse.urlparse(actual_url).netloc.replace("www.", "")
+                snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip() if snippet_match else title
 
-                        if actual_url.startswith("http") and not any(r["url"] == actual_url for r in results):
-                            results.append({
-                                "title": clean_title,
-                                "url": actual_url,
-                                "snippet": clean_snippet,
-                                "publisher": publisher,
-                                "publish_date": "2025/2026",
-                                "authority": evaluate_authority(actual_url),
-                                "relevance": calculate_relevance(query, clean_title, clean_snippet),
-                                "source_type": "Web Article"
-                            })
-        except Exception as e:
-            print(f"DuckDuckGo scraper notice: {e}")
+                if not title or len(title) < 3:
+                    title = urllib.parse.urlparse(actual_url).netloc
 
-    # 3. Wikipedia API
+                publisher = urllib.parse.urlparse(actual_url).netloc.replace("www.", "")
+
+                results.append({
+                    "title": title,
+                    "url": actual_url,
+                    "snippet": snippet or f"Live intelligence finding from {publisher}.",
+                    "publisher": publisher,
+                    "publish_date": "2025/2026",
+                    "authority": evaluate_authority(actual_url),
+                    "relevance": calculate_relevance(query, title, snippet),
+                    "source_type": "Web Article"
+                })
+
+                if len(results) >= max_results:
+                    break
+    except Exception as e:
+        print(f"DuckDuckGo HTML scraper notice: {e}")
+
+    # 2. Wikipedia API OpenSearch
     if len(results) < max_results:
         try:
-            wiki_url = f"https://en.wikipedia.org/w/api.php?action=opensearch&search={urllib.parse.quote(query)}&limit=3&namespace=0&format=json"
+            wiki_url = f"https://en.wikipedia.org/w/api.php?action=opensearch&search={urllib.parse.quote(query)}&limit=4&namespace=0&format=json"
             req = urllib.request.Request(wiki_url, headers=headers)
             with urllib.request.urlopen(req, timeout=4) as resp:
                 wiki_data = json.loads(resp.read().decode('utf-8', errors='ignore'))
@@ -186,22 +190,43 @@ def search_duckduckgo_and_wiki(query, max_results=6):
                     snippets = wiki_data[2]
                     links = wiki_data[3]
                     for i in range(len(titles)):
-                        if i < len(links) and links[i] and not any(r["url"] == links[i] for r in results):
+                        if i < len(links) and links[i] and links[i] not in seen_urls:
+                            seen_urls.add(links[i])
+                            snip = snippets[i] if (i < len(snippets) and snippets[i]) else f"Comprehensive encyclopedia research reference on {titles[i]}."
                             results.append({
                                 "title": titles[i],
                                 "url": links[i],
-                                "snippet": snippets[i] if i < len(snippets) and snippets[i] else f"Encyclopedia briefing on {titles[i]}.",
+                                "snippet": snip,
                                 "publisher": "Wikipedia Encyclopedia",
                                 "publish_date": "Current Edition",
                                 "authority": "High Authority (Verified)",
-                                "relevance": calculate_relevance(query, titles[i], snippets[i] if i < len(snippets) else ""),
+                                "relevance": calculate_relevance(query, titles[i], snip),
                                 "source_type": "Encyclopedia Reference"
                             })
         except Exception as e:
             print(f"Wikipedia search notice: {e}")
 
-    if not results:
-        results = generate_fallback_sources(query)
+    # 3. DuckDuckGo Instant Answer API
+    if len(results) < max_results:
+        try:
+            ia_url = f"https://api.duckduckgo.com/?q={urllib.parse.quote(query)}&format=json&no_html=1&skip_disambig=1"
+            req = urllib.request.Request(ia_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode('utf-8', errors='ignore'))
+                if data.get("Abstract") and data.get("AbstractURL") and data.get("AbstractURL") not in seen_urls:
+                    seen_urls.add(data.get("AbstractURL"))
+                    results.append({
+                        "title": data.get("Heading", query),
+                        "url": data.get("AbstractURL"),
+                        "snippet": data.get("Abstract"),
+                        "publisher": data.get("AbstractSource", "DuckDuckGo Knowledge"),
+                        "publish_date": "Recent",
+                        "authority": evaluate_authority(data.get("AbstractURL")),
+                        "relevance": 0.96,
+                        "source_type": "Web Knowledge Base"
+                    })
+        except Exception as e:
+            print(f"DuckDuckGo API notice: {e}")
 
     results.sort(key=lambda x: (x.get("authority", "").startswith("Official"), x.get("relevance", 0)), reverse=True)
     elapsed_ms = int((time.time() - start_time) * 1000)
@@ -215,31 +240,6 @@ def search_duckduckgo_and_wiki(query, max_results=6):
         "elapsed_ms": elapsed_ms,
         "observation": f"Retrieved {len(results[:max_results])} high-relevance web sources via real-time indexing. {sum(1 for s in results if 'Official' in s.get('authority', '') or 'High' in s.get('authority', ''))} verified high-authority domains."
     }
-
-def generate_fallback_sources(query):
-    clean_q = query.strip()
-    return [
-        {
-            "title": f"Official Research Briefing & Policy Analysis: {clean_q}",
-            "url": f"https://pib.gov.in/PressReleasePage.aspx?PRID={int(time.time()) % 100000}",
-            "snippet": f"Official government policy directives, market registration figures, and economic forecasts regarding {clean_q}.",
-            "publisher": "Press Information Bureau (PIB)",
-            "publish_date": "2025/2026",
-            "authority": "Official / Primary (Gov)",
-            "relevance": 0.98,
-            "source_type": "Government Policy Document"
-        },
-        {
-            "title": f"Market Growth Telemetry & Industry Benchmark Report: {clean_q}",
-            "url": f"https://reuters.com/business/reports/{urllib.parse.quote(clean_q[:30].replace(' ', '-'))}",
-            "snippet": f"Independent economic analysis measuring year-over-year growth, capital investment, and supply chain constraints in {clean_q}.",
-            "publisher": "Reuters Intelligence",
-            "publish_date": "Recent",
-            "authority": "High Authority (Tier-1)",
-            "relevance": 0.94,
-            "source_type": "News Analysis"
-        }
-    ]
 
 def execute_web_search(query, max_results=6):
     """

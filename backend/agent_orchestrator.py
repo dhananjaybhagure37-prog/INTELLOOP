@@ -469,12 +469,16 @@ class ReActResearchOrchestrator:
 Your objective: {self.question}
 
 CRITICAL INSTRUCTIONS:
-1. You MUST actually perform internet research using the tools provided (e.g. web_search, academic_search). Do not answer from purely internal knowledge without verifying.
+1. You MUST retrieve real external sources using the provided tools:
+   - Use `academic_search` for research papers, scientific literature, arXiv preprints, academic studies, or technical theories.
+   - Use `web_search` for current market data, news, government policies, industry trends, and general web information.
+   - Use `fetch_source` to read full webpage content if necessary.
+   - Use `calculator` for mathematical calculations.
 2. Formulate 1 to 3 targeted, high-quality search queries to gather comprehensive facts and evidence.
-3. Once you have received the necessary search results and findings from the tools, DO NOT make endless additional tool calls. Immediately proceed to analyze the evidence and write your comprehensive final report.
+3. Once you have received search results and findings from the tools, DO NOT make endless additional tool calls. Proceed to analyze the evidence and write your comprehensive final report.
 4. For every source used, preserve and return the ACTUAL source URL in your final report.
-5. If two sources disagree, detect the conflict, compare reliability, and explicitly explain the resolution. If uncertainty remains, report it.
-6. Do NOT fabricate facts or URLs. If evidence is insufficient, state it explicitly.
+5. If two sources disagree, detect the conflict, compare reliability, and explicitly explain the resolution.
+6. Do NOT fabricate facts or URLs.
 7. The final report MUST contain a section '## Sources & Research Papers' with clickable markdown links (e.g., [Source Title](URL)) to every web source and academic paper you retrieved.
 
 Synthesize all findings into a structured, professional markdown report with clear headings."""
