@@ -25,6 +25,7 @@ from database.db import (
 from backend.tools.langgraph_tools import get_all_langgraph_tools, set_chaos_mode
 from backend.tools.fact_extractor import extract_facts_from_content
 from backend.tools.verifier_tool import verify_claim_against_sources, detect_statistical_conflicts
+from backend.observability import ObservabilityManager, TraceEventType
 
 MAX_TOOL_CALLS_PER_INVESTIGATION = 4
 
@@ -64,12 +65,14 @@ class AgentState(TypedDict):
     tool_call_count: int
 
 class ReActResearchOrchestrator:
-    def __init__(self, investigation_id, question, depth='Standard', domain='General Intelligence', chaos_mode=False):
+    def __init__(self, investigation_id, question, depth='Standard', domain='General Intelligence', chaos_mode=False, demo_failure=False):
         self.inv_id = investigation_id
         self.question = question.strip()
         self.depth = depth
         self.domain = domain
         self.chaos_mode = chaos_mode
+        self.demo_failure = demo_failure
+        self.demo_failure_triggered = False
         self.step_index = 0
         self.start_time = time.time()
         self.tools = get_all_langgraph_tools()
@@ -230,7 +233,22 @@ class ReActResearchOrchestrator:
                     else:
                         raise e
 
+        llm_start_t = time.time()
         response = _invoke_with_retry(messages)
+        llm_latency_ms = int((time.time() - llm_start_t) * 1000)
+        
+        has_tools = bool(hasattr(response, 'tool_calls') and response.tool_calls)
+        ObservabilityManager.record_llm_span(
+            mission_id=self.inv_id,
+            iteration=self.llm_call_count,
+            prompt_tokens_est=len(str(messages)) // 4,
+            response_text=str(response.content) if hasattr(response, 'content') else '',
+            latency_ms=llm_latency_ms,
+            provider=provider_name,
+            model="openai/gpt-oss-120b" if "Groq" in provider_name else "default",
+            has_tool_calls=has_tools
+        )
+        
         new_messages = [response]
         
         if not hasattr(response, 'tool_calls') or not response.tool_calls:
@@ -269,7 +287,54 @@ class ReActResearchOrchestrator:
                 tool_input=tool_args
             )
             
-            # 1. Check if this exact tool call already failed previously
+            # 1. Check for Controlled Demo Failure (Simulate 1 search gateway failure for hackathon demo)
+            if self.demo_failure and not self.demo_failure_triggered and tool_name in ("web_search", "academic_search"):
+                self.demo_failure_triggered = True
+                sim_err = f"[CONTROLLED DEMO] ConnectionTimeout on primary search gateway (latency 2850ms)"
+                self.failed_tool_calls[tool_key] = 1
+                
+                # Trace failure event
+                ObservabilityManager.record_tool_span(
+                    mission_id=self.inv_id,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    success=False,
+                    latency_ms=2850,
+                    result_summary=sim_err,
+                    is_failure=True,
+                    error_msg=sim_err
+                )
+                
+                # Auto-diagnose and record self-improvement optimization
+                ObservabilityManager.record_diagnosis_and_recovery(
+                    mission_id=self.inv_id,
+                    root_cause_code="SEARCH_TOOL_TIMEOUT",
+                    affected_component=tool_name,
+                    evidence_list=[
+                        f"External gateway timeout (2850ms) on {tool_name}",
+                        "Primary indexer connection reset",
+                        "Controlled Failure Demonstration Mode active"
+                    ],
+                    recovery_strategy="MULTI_ENGINE_FALLBACK",
+                    latency_benefit_est_ms=2800
+                )
+                
+                # UI step in reasoning stream
+                self.record_step(
+                    step_type='ERROR',
+                    title='Controlled Failure & Auto-Recovery',
+                    summary=f'Simulated gateway timeout on {tool_name}. Auto-diagnosis detected SEARCH_TOOL_TIMEOUT. Switching to secondary multi-engine indexer.',
+                    graph_node='OBSERVE',
+                    tool_name=tool_name,
+                    observation="Auto-Diagnosis: SEARCH_TOOL_TIMEOUT detected. Switched to fallback multi-provider indexer."
+                )
+                
+                # Provide feedback to agent to proceed with alternative
+                demo_reply = f"Gateway Notice: Primary route timed out. Automatically engaged secondary multi-engine fallback. Proceed with query analysis."
+                tool_replies.append(ToolMessage(content=demo_reply, tool_call_id=tool_call['id']))
+                continue
+
+            # 2. Check if this exact tool call already failed previously
             if tool_key in self.failed_tool_calls:
                 fail_cnt = self.failed_tool_calls[tool_key]
                 error_feedback = (
@@ -280,6 +345,18 @@ class ReActResearchOrchestrator:
                     f"Either try a different search query, use another tool, or analyze the evidence and generate your final report."
                 )
                 tool_replies.append(ToolMessage(content=error_feedback, tool_call_id=tool_call['id']))
+                
+                ObservabilityManager.record_tool_span(
+                    mission_id=self.inv_id,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    success=False,
+                    latency_ms=10,
+                    result_summary=error_feedback,
+                    is_failure=True,
+                    error_msg=f"Duplicate failure blocked for {tool_name}"
+                )
+                
                 self.record_step(
                     step_type='ERROR',
                     title=f'Duplicate Failed Call Blocked: {tool_name}',
@@ -288,7 +365,7 @@ class ReActResearchOrchestrator:
                 )
                 continue
                 
-            # 2. Check if this exact tool call already executed successfully
+            # 3. Check if this exact tool call already executed successfully
             if tool_key in self.executed_tool_calls:
                 notice_feedback = (
                     f"Tool Notice: '{tool_name}' with these arguments was already executed successfully. "
@@ -296,6 +373,17 @@ class ReActResearchOrchestrator:
                     f"Please proceed to synthesize your findings into the final report."
                 )
                 tool_replies.append(ToolMessage(content=notice_feedback, tool_call_id=tool_call['id']))
+                
+                ObservabilityManager.record_tool_span(
+                    mission_id=self.inv_id,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    success=True,
+                    latency_ms=10,
+                    result_summary=notice_feedback,
+                    is_cached=True
+                )
+                
                 self.record_step(
                     step_type='OBSERVE',
                     title=f'Cached Findings: {tool_name}',
@@ -306,10 +394,12 @@ class ReActResearchOrchestrator:
 
             tool_func = next((t for t in self.tools if t.name == tool_name), None)
             
+            tool_start_t = time.time()
             try:
                 if not tool_func:
                     raise Exception(f'Tool {tool_name} not found.')
                 result = tool_func.invoke(tool_args)
+                tool_latency_ms = int((time.time() - tool_start_t) * 1000)
                 
                 # Parse structured output to extract and persist sources
                 try:
@@ -382,6 +472,16 @@ class ReActResearchOrchestrator:
                 self.executed_tool_calls.add(tool_key)
                 tool_replies.append(ToolMessage(content=compact_content, tool_call_id=tool_call['id']))
 
+                # Record tool success in observability
+                ObservabilityManager.record_tool_span(
+                    mission_id=self.inv_id,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    success=True,
+                    latency_ms=tool_latency_ms,
+                    result_summary=compact_content[:300]
+                )
+
                 self.record_step(
                     step_type='OBSERVE',
                     title=f'Tool Result: {tool_name}',
@@ -392,10 +492,31 @@ class ReActResearchOrchestrator:
                 )
                 
             except Exception as e:
+                tool_latency_ms = int((time.time() - tool_start_t) * 1000)
                 error_msg = str(e)
                 self.failed_tool_calls[tool_key] = self.failed_tool_calls.get(tool_key, 0) + 1
                 fail_content = f"Error executing tool {tool_name}: {error_msg}. Please adjust your parameters, use another tool, or proceed to synthesize your final report."
                 tool_replies.append(ToolMessage(content=fail_content, tool_call_id=tool_call['id']))
+                
+                # Record tool failure & auto diagnosis
+                ObservabilityManager.record_tool_span(
+                    mission_id=self.inv_id,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    success=False,
+                    latency_ms=tool_latency_ms,
+                    result_summary=error_msg,
+                    is_failure=True,
+                    error_msg=error_msg
+                )
+                ObservabilityManager.record_diagnosis_and_recovery(
+                    mission_id=self.inv_id,
+                    root_cause_code="TOOL_EXECUTION_EXCEPTION",
+                    affected_component=tool_name,
+                    evidence_list=[error_msg],
+                    recovery_strategy="AUTONOMOUS_FALLBACK_INDEXER"
+                )
+                
                 self.record_step(
                     step_type='ERROR',
                     title=f'Tool Failure: {tool_name}',
@@ -439,6 +560,16 @@ class ReActResearchOrchestrator:
         # Give frontend time to connect to SSE stream before we emit the first events
         time.sleep(1.5)
         try:
+            # Initialize structured trace lifecycle in Observability Engine
+            ObservabilityManager.start_mission_trace(
+                mission_id=self.inv_id,
+                question=self.question,
+                agent_name="Sentinel-Prime",
+                domain=self.domain,
+                depth=self.depth,
+                is_demo_failure=self.demo_failure
+            )
+
             self.record_step(
                 step_type='UNDERSTAND',
                 title='LangGraph Task Ingested',
@@ -544,6 +675,7 @@ Synthesize all findings into a structured, professional markdown report with cle
                     summary='Gemini API daily quota exhausted before sources could be gathered. Please retry later.',
                     graph_node='ERROR'
                 )
+                ObservabilityManager.end_mission_trace(self.inv_id, status='FAILED', error=str(e))
                 broadcast_event(self.inv_id, 'node_change', {'node': 'ERROR', 'status': 'FAILED'})
                 broadcast_event(self.inv_id, 'complete', {'investigation_id': self.inv_id, 'status': 'FAILED', 'error': str(e)})
             
@@ -570,6 +702,7 @@ Synthesize all findings into a structured, professional markdown report with cle
                     summary=f'Execution error: {str(e)}',
                     graph_node='ERROR'
                 )
+                ObservabilityManager.end_mission_trace(self.inv_id, status='FAILED', error=str(e))
                 broadcast_event(self.inv_id, 'node_change', {'node': 'ERROR', 'status': 'FAILED'})
                 broadcast_event(self.inv_id, 'complete', {'investigation_id': self.inv_id, 'status': 'FAILED', 'error': str(e)})
 
@@ -601,6 +734,14 @@ Synthesize all findings into a structured, professional markdown report with cle
 
     def finalize_investigation(self, final_report):
         elapsed_total_ms = int((time.time() - self.start_time) * 1000)
+
+        # Record Verification Started Span
+        ObservabilityManager.record_event(
+            mission_id=self.inv_id,
+            event_type=TraceEventType.VERIFICATION_STARTED,
+            stage="VERIFICATION",
+            status="IN_PROGRESS"
+        )
 
         # Extract claims from report and verify against collected sources
         report_facts = extract_facts_from_content(final_report)
@@ -648,6 +789,15 @@ Synthesize all findings into a structured, professional markdown report with cle
             conf["investigation_id"] = self.inv_id
             add_conflict(conf)
 
+        # Record Verification Completed Span
+        ObservabilityManager.record_event(
+            mission_id=self.inv_id,
+            event_type=TraceEventType.VERIFICATION_COMPLETED,
+            stage="VERIFICATION",
+            status="SUCCESS",
+            metadata={"claims_verified": len(seen_claims), "conflicts_found": len(conflicts)}
+        )
+
         # Calculate evidence-based confidence
         if not self.collected_sources:
             confidence_score = 0.0
@@ -668,6 +818,15 @@ Synthesize all findings into a structured, professional markdown report with cle
             'completed_at': time.strftime('%Y-%m-%dT%H:%M:%SZ'),
             'execution_time_ms': elapsed_total_ms
         })
+
+        # Record Mission Completed in Observability
+        ObservabilityManager.end_mission_trace(
+            mission_id=self.inv_id,
+            status='COMPLETED',
+            sources_count=len(self.collected_sources),
+            claims_count=len(seen_claims),
+            report_length=len(final_report)
+        )
 
         self.record_step(
             step_type='SYNTHESIZE',

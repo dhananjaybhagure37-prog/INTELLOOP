@@ -31,8 +31,9 @@ except ImportError:
 from database.db import (
     get_investigation, list_investigations, delete_investigation,
     list_logs, init_db, get_db, get_all_tool_stats, record_tool_usage, save_investigation,
-    get_evaluations, save_human_evaluation
+    get_evaluations, save_human_evaluation, get_traces_by_mission, get_all_trace_missions
 )
+from backend.observability import AutoDiagnosisEngine, BenchmarkTelemetryCalculator
 from backend.agent_orchestrator import (
     ReActResearchOrchestrator, register_stream, unregister_stream
 )
@@ -145,6 +146,42 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(200, {"evaluations": evals})
             return
 
+        # 9. List All Traced Missions: /api/traces
+        if path == "/api/traces":
+            missions = get_all_trace_missions(50)
+            self.send_json(200, {"traces": missions})
+            return
+
+        # 10. Trace Mission Summary & Auto-Diagnosis: /api/traces/{id}/summary
+        if path.startswith("/api/traces/") and path.endswith("/summary"):
+            mission_id = path.split("/")[3]
+            traces = get_traces_by_mission(mission_id)
+            inv = get_investigation(mission_id) or {}
+            diagnosis = AutoDiagnosisEngine.diagnose_trace(traces)
+            metrics = BenchmarkTelemetryCalculator.calculate_metrics(traces)
+            self.send_json(200, {
+                "success": True,
+                "mission_id": mission_id,
+                "investigation": inv,
+                "trace_count": len(traces),
+                "traces": traces,
+                "diagnosis": diagnosis,
+                "metrics": metrics
+            })
+            return
+
+        # 11. Single Mission Trace Events: /api/traces/{id}
+        if path.startswith("/api/traces/") and not path.endswith("/summary"):
+            mission_id = path.split("/")[3]
+            traces = get_traces_by_mission(mission_id)
+            self.send_json(200, {
+                "success": True,
+                "mission_id": mission_id,
+                "trace_count": len(traces),
+                "traces": traces
+            })
+            return
+
         # Default fallback to static file serving
         return super().do_GET()
 
@@ -170,8 +207,9 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             depth = data.get("depth", "Standard")
             domain = data.get("domain", "General Intelligence")
             chaos_mode = data.get("chaos_mode", False)
+            demo_failure = data.get("demo_failure", False) or os.environ.get("OBSERVABILITY_DEMO_FAILURE", "").lower() == "true"
 
-            print(f"[SERVER] POST /api/investigations: Received mission request id={inv_id}, domain='{domain}', depth='{depth}', chaos={chaos_mode}")
+            print(f"[SERVER] POST /api/investigations: Received mission request id={inv_id}, domain='{domain}', depth='{depth}', chaos={chaos_mode}, demo_failure={demo_failure}")
             print(f"[SERVER] Prompt: \"{question[:100]}...\"")
 
             # Persist record synchronously so it exists when frontend navigates
@@ -185,7 +223,7 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
             })
 
             # Spawn real autonomous ReAct worker in background thread
-            orchestrator = ReActResearchOrchestrator(inv_id, question, depth=depth, domain=domain, chaos_mode=chaos_mode)
+            orchestrator = ReActResearchOrchestrator(inv_id, question, depth=depth, domain=domain, chaos_mode=chaos_mode, demo_failure=demo_failure)
             worker = threading.Thread(target=orchestrator.run, daemon=True)
             worker.start()
             print(f"[SERVER] Dispatched LangGraph autonomous worker thread for investigation {inv_id}")
@@ -195,7 +233,9 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
                 "investigation_id": inv_id,
                 "question": question,
                 "status": "PLANNING",
-                "stream_url": f"/api/investigations/{inv_id}/stream"
+                "demo_failure": demo_failure,
+                "stream_url": f"/api/investigations/{inv_id}/stream",
+                "trace_url": f"/api/traces/{inv_id}/summary"
             })
             return
 

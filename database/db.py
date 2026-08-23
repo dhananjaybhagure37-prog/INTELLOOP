@@ -193,6 +193,27 @@ def init_db():
     )
     """)
 
+    # 11. Traces & Observability Table (Task 7)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS traces (
+        id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL,
+        mission_id TEXT NOT NULL,
+        parent_span_id TEXT,
+        span_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        status TEXT NOT NULL,
+        latency_ms INTEGER DEFAULT 0,
+        metadata TEXT,
+        FOREIGN KEY (mission_id) REFERENCES investigations(id) ON DELETE CASCADE
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_traces_mission ON traces(mission_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_traces_ts ON traces(timestamp)")
+
     # Seed initial tools if not present
     cursor.execute("SELECT COUNT(*) FROM tool_stats")
     if cursor.fetchone()[0] == 0:
@@ -516,6 +537,85 @@ def save_human_evaluation(human_eval):
     ))
     conn.commit()
     conn.close()
+
+# --- Observability Tracing Operations (Task 7) ---
+
+def save_trace_event(event):
+    """Persists a structured agent telemetry event to SQLite."""
+    conn = get_db()
+    cursor = conn.cursor()
+    row_id = event.get("id") or f"evt-{int(time.time()*1000)%1000000}-{event.get('span_id', '0')}"
+    cursor.execute("""
+    INSERT INTO traces (
+        id, trace_id, mission_id, parent_span_id, span_id, timestamp,
+        agent, event_type, stage, status, latency_ms, metadata
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        row_id,
+        event.get("trace_id"),
+        event.get("mission_id"),
+        event.get("parent_span_id"),
+        event.get("span_id"),
+        event.get("timestamp", time.strftime("%Y-%m-%dT%H:%M:%SZ")),
+        event.get("agent", "Sentinel-Prime"),
+        event.get("event_type"),
+        event.get("stage", "REASONING"),
+        event.get("status", "SUCCESS"),
+        event.get("latency_ms", 0),
+        event.get("metadata", "{}")
+    ))
+    conn.commit()
+    conn.close()
+
+def get_traces_by_mission(mission_id):
+    """Retrieves all chronological telemetry events for a specific mission."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM traces 
+        WHERE mission_id = ? 
+        ORDER BY timestamp ASC, id ASC
+    """, (mission_id,))
+    rows = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        if isinstance(d.get("metadata"), str):
+            try:
+                d["metadata"] = json.loads(d["metadata"])
+            except Exception:
+                pass
+        rows.append(d)
+    conn.close()
+    return rows
+
+def get_all_trace_missions(limit=50):
+    """Retrieves list of missions with trace counts and aggregate telemetry."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT 
+            i.id as mission_id,
+            i.question,
+            i.status,
+            i.domain,
+            i.depth,
+            i.confidence_score,
+            i.execution_time_ms,
+            i.created_at,
+            i.completed_at,
+            COUNT(t.id) as trace_count,
+            SUM(CASE WHEN t.event_type LIKE '%TOOL%' THEN 1 ELSE 0 END) as tool_event_count,
+            SUM(CASE WHEN t.status = 'FAILED' OR t.event_type LIKE '%FAIL%' OR t.event_type LIKE '%ERROR%' THEN 1 ELSE 0 END) as error_event_count,
+            SUM(CASE WHEN t.event_type LIKE '%OPTIMIZ%' OR t.event_type LIKE '%PREVENT%' THEN 1 ELSE 0 END) as optimization_count
+        FROM investigations i
+        LEFT JOIN traces t ON i.id = t.mission_id
+        GROUP BY i.id
+        ORDER BY i.created_at DESC
+        LIMIT ?
+    """, (limit,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
 
 # Initialize DB on load
 init_db()

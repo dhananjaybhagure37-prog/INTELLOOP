@@ -13,6 +13,7 @@ export function renderSidebar(currentRoute = 'dashboard') {
   const navItems = [
     { path: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
     { path: 'new-mission', icon: 'add_task', label: 'New Mission' },
+    { path: 'observability', icon: 'monitoring', label: 'Observability' },
     { path: 'active-agents', icon: 'smart_toy', label: 'Active Agents' },
     { path: 'research-history', icon: 'history', label: 'Research History' },
     { path: 'knowledge-base', icon: 'menu_book', label: 'Knowledge Base' },

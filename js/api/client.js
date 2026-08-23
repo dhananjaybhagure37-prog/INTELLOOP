@@ -132,4 +132,60 @@ export class ApiClient {
     });
     return await res.json();
   }
+
+  // --- Task 7 Observability & Tracing APIs ---
+
+  static async getTracedMissions() {
+    try {
+      const res = await fetch(`${API_BASE}/api/traces`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.traces || [];
+      }
+    } catch (e) {
+      console.warn('Trace list fetch error:', e);
+    }
+    return [];
+  }
+
+  static async getMissionTraces(missionId) {
+    try {
+      const res = await fetch(`${API_BASE}/api/traces/${missionId}`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.traces || [];
+      }
+    } catch (e) {
+      console.warn('Mission trace fetch error:', e);
+    }
+    return [];
+  }
+
+  static async getTraceSummary(missionId) {
+    try {
+      const res = await fetch(`${API_BASE}/api/traces/${missionId}/summary`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('Trace summary fetch error:', e);
+    }
+    return null;
+  }
+
+  static async launchControlledFailureDemo(question = 'Investigate next-gen solid-state quantum battery electrolytes', domain = 'Clean Energy') {
+    const res = await fetch(`${API_BASE}/api/investigations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question,
+        depth: 'Standard',
+        domain,
+        chaos_mode: false,
+        demo_failure: true
+      })
+    });
+    if (!res.ok) throw new Error('Failed to launch demo failure investigation.');
+    return await res.json();
+  }
 }
