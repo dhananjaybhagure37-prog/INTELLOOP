@@ -7,6 +7,8 @@ import sqlite3
 import json
 import os
 import time
+import random
+import uuid
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "intelloop.db")
 
@@ -441,27 +443,58 @@ def add_conflict(conf):
 def add_log(log):
     conn = get_db()
     cursor = conn.cursor()
+    row_id = log.get("id") or f"log-{int(time.time()*1000)%1000000}-{random.randint(100, 999)}"
     cursor.execute("""
     INSERT INTO activity_logs (id, investigation_id, timestamp, agent_name, type, tool_name, summary, duration_ms)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        log.get("id", f"log-{int(time.time()*1000)}"),
-        log.get("investigation_id", "SYSTEM"),
+        row_id,
+        log.get("investigation_id") or log.get("missionId", "SYSTEM"),
         log.get("timestamp", time.strftime("%H:%M:%S")),
-        log.get("agent_name", "Research Agent"),
+        log.get("agent_name") or log.get("agentName", "Sentinel-Prime"),
         log.get("type", "Event"),
-        log.get("tool_name"),
+        log.get("tool_name") or log.get("toolName"),
         log.get("summary", ""),
-        log.get("duration_ms", 0)
+        log.get("duration_ms") or log.get("durationMs", 0)
     ))
     conn.commit()
     conn.close()
 
-def list_logs(limit=100):
+def list_logs(limit=250):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM activity_logs ORDER BY id DESC LIMIT ?", (limit,))
-    rows = [dict(r) for r in cursor.fetchall()]
+    cursor.execute("""
+        SELECT * FROM activity_logs 
+        ORDER BY rowid DESC 
+        LIMIT ?
+    """, (limit,))
+    rows = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        d["missionId"] = d.get("investigation_id")
+        d["agentName"] = d.get("agent_name")
+        d["toolName"] = d.get("tool_name")
+        d["durationMs"] = d.get("duration_ms")
+        rows.append(d)
+    conn.close()
+    return rows
+
+def get_logs_by_mission(mission_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM activity_logs 
+        WHERE investigation_id = ? 
+        ORDER BY rowid ASC
+    """, (mission_id,))
+    rows = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        d["missionId"] = d.get("investigation_id")
+        d["agentName"] = d.get("agent_name")
+        d["toolName"] = d.get("tool_name")
+        d["durationMs"] = d.get("duration_ms")
+        rows.append(d)
     conn.close()
     return rows
 
@@ -541,10 +574,12 @@ def save_human_evaluation(human_eval):
 # --- Observability Tracing Operations (Task 7) ---
 
 def save_trace_event(event):
-    """Persists a structured agent telemetry event to SQLite."""
+    """Persists a structured agent telemetry event to SQLite (both traces and activity_logs)."""
     conn = get_db()
     cursor = conn.cursor()
     row_id = event.get("id") or f"evt-{int(time.time()*1000)%1000000}-{event.get('span_id', '0')}"
+    
+    # 1. Save into traces table
     cursor.execute("""
     INSERT INTO traces (
         id, trace_id, mission_id, parent_span_id, span_id, timestamp,
@@ -564,6 +599,46 @@ def save_trace_event(event):
         event.get("latency_ms", 0),
         event.get("metadata", "{}")
     ))
+
+    # 2. Synchronize to activity_logs table for immediate UI visibility in Activity Logs view
+    meta_dict = {}
+    if isinstance(event.get("metadata"), str):
+        try:
+            meta_dict = json.loads(event.get("metadata"))
+        except Exception:
+            meta_dict = {}
+    elif isinstance(event.get("metadata"), dict):
+        meta_dict = event.get("metadata")
+
+    summary_text = (
+        meta_dict.get("summary") or
+        meta_dict.get("result_summary") or
+        meta_dict.get("question") or
+        f"{event.get('event_type')} ({event.get('stage')})"
+    )
+    tool_name = meta_dict.get("tool_name") or event.get("tool_name")
+    
+    time_str = event.get("timestamp", time.strftime("%H:%M:%S"))
+    if "T" in str(time_str):
+        time_display = str(time_str).split("T")[1][:8]
+    else:
+        time_display = str(time_str)[:8]
+
+    cursor.execute("""
+    INSERT INTO activity_logs (
+        id, investigation_id, timestamp, agent_name, type, tool_name, summary, duration_ms
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        f"log-{row_id}",
+        event.get("mission_id", "SYSTEM"),
+        time_display,
+        event.get("agent", "Sentinel-Prime"),
+        event.get("event_type"),
+        tool_name,
+        summary_text,
+        event.get("latency_ms", 0)
+    ))
+
     conn.commit()
     conn.close()
 

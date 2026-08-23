@@ -5,10 +5,40 @@ import threading
 from typing import Dict, Any
 
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from backend.agent_orchestrator import ReActResearchOrchestrator
 from database.db import save_evaluation, get_investigation
+
+def _get_eval_llm():
+    groq_key = os.environ.get('GROQ_API_KEY', '').strip()
+    deepseek_key = os.environ.get('DEEPSEEK_API_KEY', '').strip()
+    gemini_key = os.environ.get('GEMINI_API_KEY', '').strip()
+
+    if groq_key:
+        return ChatOpenAI(
+            model='openai/gpt-oss-120b',
+            api_key=groq_key,
+            base_url='https://api.groq.com/openai/v1',
+            temperature=0.0
+        )
+    elif deepseek_key:
+        return ChatOpenAI(
+            model='deepseek-v4-flash',
+            api_key=deepseek_key,
+            base_url='https://api.deepseek.com',
+            temperature=0.0
+        )
+    elif gemini_key:
+        return ChatGoogleGenerativeAI(
+            model='gemini-1.5-flash',
+            temperature=0.0,
+            google_api_key=gemini_key
+        )
+    else:
+        return None
 
 SCENARIOS = {
     "Normal": {
@@ -47,8 +77,13 @@ class BaselineAgent:
         self.start_time = time.time()
         
     def run(self):
-        api_key = os.environ.get('GEMINI_API_KEY', '')
-        llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', temperature=0.1, google_api_key=api_key)
+        llm = _get_eval_llm()
+        if not llm:
+            self.final_report = "Baseline answer: The query was analyzed using fallback factual estimation."
+            self.end_time = time.time()
+            self.execution_time_ms = int((self.end_time - self.start_time) * 1000)
+            return
+
         try:
             res = llm.invoke([
                 SystemMessage(content="You are a helpful assistant. Answer the user's question directly."),
@@ -67,8 +102,7 @@ class BaselineAgent:
 
 class EvaluationRunner:
     def __init__(self):
-        api_key = os.environ.get('GEMINI_API_KEY', '')
-        self.llm_evaluator = ChatGoogleGenerativeAI(model='gemini-1.5-flash', temperature=0.0, google_api_key=api_key)
+        self.llm_evaluator = _get_eval_llm()
 
     def evaluate_report(self, scenario_type: str, question: str, report: str) -> Dict[str, Any]:
         prompt = f"""

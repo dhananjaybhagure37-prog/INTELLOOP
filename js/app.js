@@ -25,7 +25,7 @@ import { renderKnowledgeView, bindKnowledgeEvents } from './views/knowledgeView.
 import { renderLogsView, bindLogsEvents } from './views/logsView.js';
 import { renderEvaluationsView, bindEvaluationsEvents } from './views/evaluationsView.js';
 import { renderObservabilityView, bindObservabilityEvents } from './views/observabilityView.js';
-import { renderAnalyticsView } from './views/analyticsView.js';
+import { renderAnalyticsView, bindAnalyticsEvents } from './views/analyticsView.js';
 import { renderSettingsView, bindSettingsEvents } from './views/settingsView.js';
 
 class Application {
@@ -225,6 +225,7 @@ class Application {
 
       case 'analytics':
         viewMount.innerHTML = renderAnalyticsView();
+        bindAnalyticsEvents();
         break;
 
       case 'settings':
