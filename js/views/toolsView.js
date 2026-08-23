@@ -64,7 +64,7 @@ export function renderToolsView() {
               <!-- Test Input -->
               <div class="flex flex-col gap-1.5 text-xs">
                 <label for="sandbox-input-payload" class="text-on-surface-variant font-medium">Input Query / Expression:</label>
-                <textarea id="sandbox-input-payload" rows="3" class="form-input text-xs font-mono resize-none bg-surface-lowest"
+                <textarea id="sandbox-input-payload" rows="3" class="form-input text-xs font-mono resize-none bg-[#0c1324]"
                           placeholder='e.g. transformer models medical diagnosis or 25% of 2400'></textarea>
               </div>
 

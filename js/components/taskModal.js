@@ -54,7 +54,7 @@ export function renderTaskModal() {
           <div class="flex flex-col gap-1.5">
             <label for="task-prompt-input" class="font-label-sm text-xs text-on-surface-variant font-medium">Mission Objective / Task Prompt:</label>
             <textarea id="task-prompt-input" rows="3" required
-                      class="w-full bg-surface-lowest/80 border border-white/10 rounded-xl p-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all resize-none"
+                      class="form-input w-full bg-[#0c1324] border border-white/10 rounded-xl p-3.5 text-sm text-[#dce1fb] placeholder:text-[#c2c6d6]/55 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary focus:bg-[#0c1324] transition-all resize-none"
                       placeholder="Specify what the agent should investigate, analyze, calculate, or solve..."></textarea>
           </div>
 
