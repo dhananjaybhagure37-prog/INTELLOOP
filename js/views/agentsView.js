@@ -4,11 +4,12 @@
    ========================================================================== */
 
 import { store } from '../state/store.js';
+import { INITIAL_AGENTS } from '../state/initialData.js';
 import { toast } from '../components/toast.js';
 
 export function renderAgentsView() {
   const state = store.getState();
-  const agents = state.agents || [];
+  const agents = (state.agents && state.agents.length > 0) ? state.agents : INITIAL_AGENTS;
 
   return `
     <div class="flex flex-col gap-6 w-full max-w-7xl mx-auto pb-12">

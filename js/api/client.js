@@ -2,11 +2,24 @@
    INTELLOOP — BACKEND REST & SSE STREAMING CLIENT
    ========================================================================== */
 
-const API_BASE = window.location.origin.includes(':3000') || window.location.origin.includes(':8000')
+const API_BASE = (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
   ? ''
   : 'http://localhost:3000';
 
 export class ApiClient {
+  static async getAgents() {
+    try {
+      const res = await fetch(`${API_BASE}/api/agents`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.agents || [];
+      }
+    } catch (e) {
+      console.warn('Backend getAgents fallback to local state:', e);
+    }
+    return [];
+  }
+
   static async createInvestigation(question, depth = 'Standard', domain = 'General Intelligence', chaosMode = false) {
     const res = await fetch(`${API_BASE}/api/investigations`, {
       method: 'POST',

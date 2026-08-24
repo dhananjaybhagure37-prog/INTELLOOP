@@ -27,9 +27,9 @@ class Store {
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          agents: parsed.agents || INITIAL_AGENTS,
+          agents: (parsed.agents && parsed.agents.length > 0) ? parsed.agents : JSON.parse(JSON.stringify(INITIAL_AGENTS)),
           missions: parsed.missions || INITIAL_MISSIONS,
-          tools: parsed.tools || INITIAL_TOOLS,
+          tools: (parsed.tools && parsed.tools.length > 0) ? parsed.tools : INITIAL_TOOLS,
           activityLogs: parsed.activityLogs || INITIAL_ACTIVITY_LOGS,
           knowledgeDocs: parsed.knowledgeDocs || INITIAL_KNOWLEDGE_DOCS,
           notifications: parsed.notifications || INITIAL_NOTIFICATIONS,

@@ -5,12 +5,14 @@
 import { store } from '../state/store.js';
 import { ApiClient } from '../api/client.js';
 import { PROMPT_SCENARIOS } from '../engine/promptScenarios.js';
+import { INITIAL_AGENTS } from '../state/initialData.js';
+import { INITIAL_TOOLS } from '../tools/toolRegistry.js';
 import { toast } from './toast.js';
 
 export function renderTaskModal() {
   const state = store.getState();
-  const agents = state.agents;
-  const tools = state.tools;
+  const agents = (state.agents && state.agents.length > 0) ? state.agents : INITIAL_AGENTS;
+  const tools = (state.tools && state.tools.length > 0) ? state.tools : INITIAL_TOOLS;
 
   return `
     <div id="new-task-modal" class="modal-backdrop">
@@ -133,6 +135,24 @@ export function bindTaskModalEvents() {
   const closeModal = () => {
     if (modal) modal.classList.remove('open');
   };
+
+  const populateAgentOptions = () => {
+    const agentSelect = document.getElementById('task-agent-select');
+    if (!agentSelect) return;
+    const agentsList = (store.getState().agents && store.getState().agents.length > 0)
+      ? store.getState().agents
+      : INITIAL_AGENTS;
+    if (agentSelect.children.length === 0 || agentSelect.options.length === 0) {
+      const selectedVal = agentSelect.value || 'agent-sentinel';
+      agentSelect.innerHTML = agentsList.map(a => `
+        <option value="${a.id}" ${a.id === selectedVal ? 'selected' : ''}>
+          ${a.name} — ${a.role} (${a.successRate} Success)
+        </option>
+      `).join('');
+    }
+  };
+
+  populateAgentOptions();
 
   if (closeBtn) closeBtn.onclick = closeModal;
   if (cancelBtn) cancelBtn.onclick = closeModal;

@@ -31,7 +31,8 @@ except ImportError:
 from database.db import (
     get_investigation, list_investigations, delete_investigation,
     list_logs, init_db, get_db, get_all_tool_stats, record_tool_usage, save_investigation,
-    get_evaluations, save_human_evaluation, get_traces_by_mission, get_all_trace_missions
+    get_evaluations, save_human_evaluation, get_traces_by_mission, get_all_trace_missions,
+    get_all_agents
 )
 from backend.observability import AutoDiagnosisEngine, BenchmarkTelemetryCalculator
 from backend.agent_orchestrator import (
@@ -87,6 +88,12 @@ class IntelloopApiHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/investigations":
             invs = list_investigations(50)
             self.send_json(200, {"investigations": invs})
+            return
+
+        # 3.5 Autonomous Agents: /api/agents
+        if path == "/api/agents":
+            agents = get_all_agents()
+            self.send_json(200, {"agents": agents})
             return
 
         # 4. Activity Logs: /api/logs
